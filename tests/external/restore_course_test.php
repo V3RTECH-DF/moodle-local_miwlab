@@ -18,6 +18,10 @@ namespace local_miwlab\external;
 
 use local_miwlab\local\restorer;
 
+#[\PHPUnit\Framework\Attributes\CoversClass(\local_miwlab\external\restore_course::class)]
+#[\PHPUnit\Framework\Attributes\CoversClass(\local_miwlab\external\get_restore_status::class)]
+#[\PHPUnit\Framework\Attributes\CoversClass(\local_miwlab\external\get_restore_categories::class)]
+#[\PHPUnit\Framework\Attributes\CoversClass(\local_miwlab\local\restorer::class)]
 /**
  * Tests of the restore of a package as a new course, in the background, and of its status.
  *
@@ -30,10 +34,6 @@ use local_miwlab\local\restorer;
  * @covers     \local_miwlab\external\get_restore_categories
  * @covers     \local_miwlab\local\restorer
  */
-#[\PHPUnit\Framework\Attributes\CoversClass(\local_miwlab\external\restore_course::class)]
-#[\PHPUnit\Framework\Attributes\CoversClass(\local_miwlab\external\get_restore_status::class)]
-#[\PHPUnit\Framework\Attributes\CoversClass(\local_miwlab\external\get_restore_categories::class)]
-#[\PHPUnit\Framework\Attributes\CoversClass(\local_miwlab\local\restorer::class)]
 final class restore_course_test extends \advanced_testcase {
     /**
      * A user with a role, given in the category, holding the capabilities asked.

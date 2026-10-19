@@ -16,6 +16,7 @@
 
 namespace local_miwlab\privacy;
 
+#[\PHPUnit\Framework\Attributes\CoversClass(\local_miwlab\privacy\provider::class)]
 /**
  * Tests of the privacy provider.
  *
@@ -25,7 +26,6 @@ namespace local_miwlab\privacy;
  * @license    https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \local_miwlab\privacy\provider
  */
-#[\PHPUnit\Framework\Attributes\CoversClass(\local_miwlab\privacy\provider::class)]
 final class provider_test extends \advanced_testcase {
     public function test_null_provider_with_reason(): void {
         $this->assertInstanceOf(\core_privacy\local\metadata\null_provider::class, new provider());

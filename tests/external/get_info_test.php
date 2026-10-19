@@ -16,6 +16,7 @@
 
 namespace local_miwlab\external;
 
+#[\PHPUnit\Framework\Attributes\CoversClass(\local_miwlab\external\get_info::class)]
 /**
  * Tests of the detection of the plugin.
  *
@@ -25,7 +26,6 @@ namespace local_miwlab\external;
  * @license    https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \local_miwlab\external\get_info
  */
-#[\PHPUnit\Framework\Attributes\CoversClass(\local_miwlab\external\get_info::class)]
 final class get_info_test extends \advanced_testcase {
     public function test_version_and_features(): void {
         global $CFG;

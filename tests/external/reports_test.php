@@ -16,6 +16,12 @@
 
 namespace local_miwlab\external;
 
+#[\PHPUnit\Framework\Attributes\CoversClass(\local_miwlab\external\get_course_completion::class)]
+#[\PHPUnit\Framework\Attributes\CoversClass(\local_miwlab\external\get_course_feedbacks::class)]
+#[\PHPUnit\Framework\Attributes\CoversClass(\local_miwlab\external\get_feedback_analysis::class)]
+#[\PHPUnit\Framework\Attributes\CoversClass(\local_miwlab\external\find_courses::class)]
+#[\PHPUnit\Framework\Attributes\CoversClass(\local_miwlab\local\completion_report::class)]
+#[\PHPUnit\Framework\Attributes\CoversClass(\local_miwlab\local\feedback_report::class)]
 /**
  * Tests of the consolidated reads: completion, feedbacks and the analysis of an anonymous feedback, and finding by marker.
  *
@@ -30,12 +36,6 @@ namespace local_miwlab\external;
  * @covers     \local_miwlab\local\completion_report
  * @covers     \local_miwlab\local\feedback_report
  */
-#[\PHPUnit\Framework\Attributes\CoversClass(\local_miwlab\external\get_course_completion::class)]
-#[\PHPUnit\Framework\Attributes\CoversClass(\local_miwlab\external\get_course_feedbacks::class)]
-#[\PHPUnit\Framework\Attributes\CoversClass(\local_miwlab\external\get_feedback_analysis::class)]
-#[\PHPUnit\Framework\Attributes\CoversClass(\local_miwlab\external\find_courses::class)]
-#[\PHPUnit\Framework\Attributes\CoversClass(\local_miwlab\local\completion_report::class)]
-#[\PHPUnit\Framework\Attributes\CoversClass(\local_miwlab\local\feedback_report::class)]
 final class reports_test extends \advanced_testcase {
     /**
      * The integration account: only local/miwlab:viewreports, at site level. Not enrolled anywhere.
