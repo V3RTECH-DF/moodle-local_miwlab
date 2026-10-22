@@ -37,8 +37,16 @@ final class get_info_test extends \advanced_testcase {
         $this->assertSame('local_miwlab', $info['component']);
         $this->assertSame($plugin->version, $info['version']);
         $this->assertSame($plugin->release, $info['release']);
-        $this->assertSame(['restore', 'restorestatus', 'findcourses', 'completion', 'feedback'], $info['features']);
+        $this->assertSame(
+            [
+                'restore', 'restorestatus', 'findcourses', 'completion', 'feedback', 'moduletypes', 'courseformats', 'replace',
+                'hidecourse', 'coursestate', 'blocks', 'badges', 'contentbackup', 'certificatetemplates', 'uploadlimits',
+                'forumtopics',
+            ],
+            $info['features']
+        );
         $this->assertFalse($info['systemcapabilities']['restorecourse']);
         $this->assertFalse($info['systemcapabilities']['viewreports']);
+        $this->assertFalse($info['systemcapabilities']['viewmoduletypes']);
     }
 }

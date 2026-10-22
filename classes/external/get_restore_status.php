@@ -16,6 +16,7 @@
 
 namespace local_miwlab\external;
 
+use local_miwlab\local\replacer;
 use local_miwlab\local\restorer;
 
 /**
@@ -38,7 +39,8 @@ class get_restore_status extends base {
     }
 
     /**
-     * Returns the status; whoever can restore in the category of the restore can follow it.
+     * Returns the status; whoever can restore in the category of the restore can follow it (a replacement: whoever can
+     * replace the course).
      *
      * @param string $restoreid
      * @return array
@@ -49,6 +51,13 @@ class get_restore_status extends base {
         $record = $DB->get_record('local_miwlab_restores', ['restoreid' => $params['restoreid']]);
         if (!$record) {
             throw new \moodle_exception('error:restorenotfound', 'local_miwlab');
+        }
+        if (($record->mode ?? restorer::MODE_NEW) === replacer::MODE) {
+            // A replacement is followed by whoever can replace that course.
+            $course = replacer::course((int) $record->courseid);
+            self::validate_category_context((int) $course->category);
+            require_capability('local/miwlab:replacecourse', \context_course::instance($course->id));
+            return restorer::export($record);
         }
         $context = \context_coursecat::instance($record->categoryid, IGNORE_MISSING);
         if (!$context) {
@@ -80,6 +89,29 @@ class get_restore_status extends base {
             'timecreated' => new external_value(PARAM_INT, 'When it was queued'),
             'timestarted' => new external_value(PARAM_INT, 'When the background task started it; 0 before'),
             'timefinished' => new external_value(PARAM_INT, 'When it ended; 0 before'),
+            'mode' => new external_value(
+                PARAM_ALPHA,
+                'new: a new course in the category; replace: the content of a course replaced'
+            ),
+            'backupfilename' => new external_value(
+                PARAM_FILE,
+                'Mode replace: the backup of the course made before, in its course backup area (Course > Restore); empty: none'
+            ),
+            'rolledback' => new external_value(
+                PARAM_BOOL,
+                'Mode replace, failed: the restore had deleted content and the backup was restored into the course'
+            ),
+            'coursesignature' => new external_value(
+                PARAM_ALPHANUM,
+                'When finished: the state of the content of the course right after (as local_miwlab_get_course_state)'
+            ),
+            'contentmodified' => new external_value(PARAM_INT, 'When finished: the latest edit of the content'),
+            'topicscreated' => new external_value(
+                PARAM_INT,
+                'When finished: the forum topics recreated from the package (the opening topics the MiwLab sent)'
+            ),
+            'topicsskipped' => new external_value(PARAM_INT, 'When finished: the forum topics that could not be created'),
+            'topicsnote' => new external_value(PARAM_RAW, 'When finished: the first reason a topic was not created'),
         ]);
     }
 }

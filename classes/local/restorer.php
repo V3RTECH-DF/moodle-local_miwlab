@@ -23,7 +23,8 @@ use restore_dbops;
 use stdClass;
 
 /**
- * Restores a MiwLab package (.mbz) as a new course in a category, in the background.
+ * Restores a MiwLab package (.mbz) as a new course in a category, in the background. From 1.5.0 the same queue also replaces
+ * the content of an existing course (replacer, mode "replace").
  *
  * The package is uploaded beforehand to the draft area of the account (webservice/upload.php or core_files_upload).
  * The plugin keeps only the progress of each restore (table local_miwlab_restores): no data of a person.
@@ -50,8 +51,17 @@ class restorer {
         self::STATUS_FAILED => 'failed',
     ];
 
+    /** Mode of a restore record that creates a new course. */
+    const MODE_NEW = 'new';
+
     /** @var string[] Capabilities needed in the category, all of them. */
     const CAPABILITIES = ['local/miwlab:restorecourse', 'moodle/restore:restorecourse', 'moodle/course:create'];
+
+    /**
+     * Capability needed in the restored course to activate the badges the package brought (1.6.0). Without it the restore
+     * still finishes, with the badges inactive, as a restore by hand leaves them.
+     */
+    const BADGES_CAPABILITY = 'moodle/badges:configurecriteria';
 
     /** Pattern of the marker, at most 88 characters: the course ID number has 100, and a repeated marker gets ":<course id>". */
     const MARKER_PATTERN = '/^miwlab:[A-Za-z0-9_-]{1,60}(:[A-Za-z0-9_-]{1,20})?$/';
@@ -194,7 +204,19 @@ class restorer {
             $file = false;
         }
         $tempdir = make_backup_temp_directory($record->restoreid);
+        if (($record->mode ?? self::MODE_NEW) === replacer::MODE) {
+            try {
+                replacer::run($record, $file, $tempdir);
+            } finally {
+                fulldelete($tempdir);
+                if ($file) {
+                    $file->delete();
+                }
+            }
+            return;
+        }
         $controller = null;
+        $keptopics = '';
         try {
             $context = \context_coursecat::instance($record->categoryid, IGNORE_MISSING);
             if (!$context) {
@@ -205,19 +227,13 @@ class restorer {
             if (!$file || $file->is_directory()) {
                 throw new moodle_exception('error:draftfilenotfound', 'local_miwlab');
             }
-            if (!self::looks_like_backup($file)) {
-                throw new moodle_exception('error:notabackup', 'local_miwlab');
-            }
-            $packer = get_file_packer('application/vnd.moodle.backup');
-            if (!$file->extract_to_pathname($packer, $tempdir)) {
-                throw new moodle_exception('error:notabackup', 'local_miwlab');
-            }
-            if (!is_readable($tempdir . '/moodle_backup.xml')) {
-                throw new moodle_exception('error:notabackup', 'local_miwlab');
-            }
-            $marker = (string) $record->marker;
-            if ($marker === '') {
-                $marker = self::marker_in_package($tempdir);
+            $marker = self::extract($file, $tempdir, (string) $record->marker);
+            // 1.7.0 (issue 178): Moodle deletes the extracted package when the restore ends, so the topics are kept aside first.
+            $keepfailure = '';
+            try {
+                $keptopics = forum_topics::keep($tempdir);
+            } catch (moodle_exception $e) {
+                $keepfailure = $e->getMessage();
             }
 
             [$fullname, $shortname] = restore_dbops::calculate_course_names(
@@ -248,6 +264,17 @@ class restorer {
             $controller->destroy();
             $controller = null;
             self::remove_restorer_access($courseid);
+            // The badges of the package come inactive from the restore: the course is new, so every badge in it came
+            // from the package. Activating them needs moodle/badges:configurecriteria in the course (without it, they stay
+            // inactive, as a restore by hand leaves them).
+            if (has_capability(self::BADGES_CAPABILITY, \context_course::instance($courseid))) {
+                badges::activate_restored($courseid, []);
+            }
+
+            // 1.7.0 (issue 178): the opening topics of the forums that the package carries, as the account of the integration.
+            $topics = $keepfailure !== ''
+                ? ['created' => 0, 'skipped' => 1, 'existing' => 0, 'note' => $keepfailure]
+                : forum_topics::create_from_package($courseid, $keptopics);
 
             if ($marker !== '') {
                 // The ID number is unique: a second restore of the same course gets the marker followed by its own id.
@@ -268,6 +295,9 @@ class restorer {
                 'status' => self::STATUS_FINISHED,
                 'progress' => 1,
                 'timefinished' => time(),
+                'topicscreated' => $topics['created'],
+                'topicsskipped' => $topics['skipped'],
+                'topicsnote' => $topics['note'] === '' ? null : $topics['note'],
             ]);
         } catch (\Throwable $e) {
             if ($controller) {
@@ -286,6 +316,9 @@ class restorer {
             ]);
         } finally {
             fulldelete($tempdir);
+            if ($keptopics !== '') {
+                fulldelete($keptopics);
+            }
             if ($file) {
                 $file->delete();
             }
@@ -320,6 +353,58 @@ class restorer {
     }
 
     /**
+     * Extracts the package into the backup temp directory of the restore, after checking it looks like a backup, and
+     * returns the marker to write: the one asked or, when none, the one the package carries.
+     *
+     * @param \stored_file $file
+     * @param string $tempdir
+     * @param string $marker
+     * @return string
+     * @throws moodle_exception
+     */
+    public static function extract(\stored_file $file, string $tempdir, string $marker): string {
+        if (!self::looks_like_backup($file)) {
+            throw new moodle_exception('error:notabackup', 'local_miwlab');
+        }
+        $packer = get_file_packer('application/vnd.moodle.backup');
+        if (!$file->extract_to_pathname($packer, $tempdir)) {
+            throw new moodle_exception('error:notabackup', 'local_miwlab');
+        }
+        if (!is_readable($tempdir . '/moodle_backup.xml')) {
+            throw new moodle_exception('error:notabackup', 'local_miwlab');
+        }
+        return $marker !== '' ? $marker : self::marker_in_package($tempdir);
+    }
+
+    /**
+     * What the package says of its course (course/course.xml) that the replacement uses: whether completion is tracked.
+     *
+     * @param string $dir The extracted package.
+     * @return array ['enablecompletion' => bool]
+     */
+    public static function course_in_package(string $dir): array {
+        $xml = self::course_xml($dir);
+        return ['enablecompletion' => $xml && isset($xml->enablecompletion) && (int) $xml->enablecompletion === 1];
+    }
+
+    /**
+     * The course/course.xml of an extracted package, read without the network, or null.
+     *
+     * @param string $dir
+     * @return \SimpleXMLElement|null
+     */
+    protected static function course_xml(string $dir): ?\SimpleXMLElement {
+        $path = $dir . '/course/course.xml';
+        if (!is_readable($path) || filesize($path) > 5 * 1024 * 1024) {
+            return null;
+        }
+        $previous = libxml_use_internal_errors(true);
+        $xml = simplexml_load_file($path, 'SimpleXMLElement', LIBXML_NONET);
+        libxml_use_internal_errors($previous);
+        return $xml ?: null;
+    }
+
+    /**
      * Whether the file starts as a Moodle backup does: gzip (.mbz since Moodle 2.6) or zip.
      *
      * Checked before extracting, so that any other file is refused with a clear reason.
@@ -343,7 +428,7 @@ class restorer {
      * @param \Throwable $e
      * @return string
      */
-    protected static function reason(\Throwable $e): string {
+    public static function reason(\Throwable $e): string {
         $reason = trim($e->getMessage());
         if ($e instanceof moodle_exception && !empty($e->debuginfo) && strpos($e->errorcode, 'error:') !== 0) {
             $reason .= ' (' . trim(strip_tags((string) $e->debuginfo)) . ')';
@@ -360,13 +445,7 @@ class restorer {
      * @return string Empty when there is none.
      */
     public static function marker_in_package(string $dir): string {
-        $path = $dir . '/course/course.xml';
-        if (!is_readable($path) || filesize($path) > 5 * 1024 * 1024) {
-            return '';
-        }
-        $previous = libxml_use_internal_errors(true);
-        $xml = simplexml_load_file($path, 'SimpleXMLElement', LIBXML_NONET);
-        libxml_use_internal_errors($previous);
+        $xml = self::course_xml($dir);
         if (!$xml || !isset($xml->idnumber)) {
             return '';
         }
@@ -404,6 +483,14 @@ class restorer {
             'timecreated' => (int) $record->timecreated,
             'timestarted' => (int) $record->timestarted,
             'timefinished' => (int) $record->timefinished,
+            'mode' => ($record->mode ?? self::MODE_NEW) === replacer::MODE ? replacer::MODE : self::MODE_NEW,
+            'backupfilename' => (string) ($record->backupfilename ?? ''),
+            'rolledback' => !empty($record->rolledback),
+            'coursesignature' => '',
+            'contentmodified' => 0,
+            'topicscreated' => (int) ($record->topicscreated ?? 0),
+            'topicsskipped' => (int) ($record->topicsskipped ?? 0),
+            'topicsnote' => (string) ($record->topicsnote ?? ''),
         ];
         if ($status === self::STATUS_FINISHED) {
             $course = $DB->get_record('course', ['id' => $record->courseid]);
@@ -417,6 +504,10 @@ class restorer {
             $result['coursefullname'] = $course->fullname;
             $result['courseshortname'] = $course->shortname;
             $result['marker'] = (string) $course->idnumber;
+            // The state of the content right after the MiwLab sent it (1.5.0): what it compares with before replacing it later.
+            $state = replacer::course_state((int) $course->id);
+            $result['coursesignature'] = $state['signature'];
+            $result['contentmodified'] = $state['contentmodified'];
         } else if ($status === self::STATUS_FAILED) {
             $result['errorcode'] = (string) $record->errorcode;
             $result['errormessage'] = (string) $record->errormessage;

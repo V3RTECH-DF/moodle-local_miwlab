@@ -18,7 +18,12 @@
  * Capabilities of the MiwLab companion plugin.
  *
  * Restoring also needs the core capabilities moodle/restore:restorecourse and moodle/course:create
- * in the same category; reading the consolidated reports needs nothing else.
+ * in the same category; reading the consolidated reports needs nothing else. Replacing the content of a course
+ * (1.5.0) also needs, in the course, moodle/backup:backupcourse (the copy made before), moodle/restore:restorecourse,
+ * moodle/restore:configure (to keep enrolments, roles and groups) and moodle/restore:rolldates (to keep the dates of
+ * the course); hiding a course also needs moodle/course:visibility. Recreating the opening topics of the forums after a restore
+ * (1.7.0) also needs, in the restored course, mod/forum:startdiscussion (mod/forum:addnews for the announcements forum),
+ * mod/forum:createattachment and mod/forum:pindiscussions.
  *
  * @package    local_miwlab
  * @copyright  2026 V3RTECH TECNOLOGIA, CONSULTORIA E INOVACAO LTDA <suporte@v3rtech.com.br>
@@ -41,6 +46,51 @@ $capabilities = [
     'local/miwlab:viewreports' => [
         'captype' => 'read',
         'contextlevel' => CONTEXT_COURSE,
+        'archetypes' => [
+            'manager' => CAP_ALLOW,
+        ],
+    ],
+    // Replace the content of an existing course with a MiwLab package, after a backup of it, when nobody has progress there
+    // (1.5.0); count the people enrolled and with progress, to decide.
+    'local/miwlab:replacecourse' => [
+        'riskbitmask' => RISK_XSS | RISK_CONFIG | RISK_DATALOSS,
+        'captype' => 'write',
+        'contextlevel' => CONTEXT_COURSE,
+        'archetypes' => [
+            'manager' => CAP_ALLOW,
+        ],
+    ],
+    // Hide a course, for the MiwLab, once a new course takes its place (1.5.0).
+    'local/miwlab:hidecourse' => [
+        'captype' => 'write',
+        'contextlevel' => CONTEXT_COURSE,
+        'archetypes' => [
+            'manager' => CAP_ALLOW,
+        ],
+    ],
+    // Back up the CONTENT of a course for the MiwLab, without any data of a person, and download it (1.6.0, issue 155).
+    'local/miwlab:backupcourse' => [
+        'riskbitmask' => RISK_CONFIG,
+        'captype' => 'read',
+        'contextlevel' => CONTEXT_COURSE,
+        'archetypes' => [
+            'manager' => CAP_ALLOW,
+        ],
+    ],
+    // Read the opening topics that the staff of a course started in its forums, to send them again with the package (1.7.0,
+    // issue 178). A topic started by anyone else is never read.
+    'local/miwlab:readforumtopics' => [
+        'riskbitmask' => RISK_PERSONAL,
+        'captype' => 'read',
+        'contextlevel' => CONTEXT_COURSE,
+        'archetypes' => [
+            'manager' => CAP_ALLOW,
+        ],
+    ],
+    // List the activity and resource types and the course formats installed on the site (names and versions only).
+    'local/miwlab:viewmoduletypes' => [
+        'captype' => 'read',
+        'contextlevel' => CONTEXT_SYSTEM,
         'archetypes' => [
             'manager' => CAP_ALLOW,
         ],

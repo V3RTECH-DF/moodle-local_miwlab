@@ -59,6 +59,8 @@ class cleanup_restores extends \core\task\scheduled_task {
                 'limit' => $now - self::STALLED_HOURS * HOURSECS,
             ]
         );
+        // 1.6.0: the content backups the MiwLab did not delete (downloaded, failed or stalled) go after a day.
+        \local_miwlab\local\exporter::cleanup();
         $DB->delete_records_select(
             'local_miwlab_restores',
             'status IN (:finished, :failed) AND timefinished < :limit',

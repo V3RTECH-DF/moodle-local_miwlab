@@ -25,7 +25,10 @@ namespace local_miwlab\external;
  */
 class get_info extends base {
     /** @var string[] What the plugin offers, by name. A new feature adds a name; a name never changes meaning. */
-    const FEATURES = ['restore', 'restorestatus', 'findcourses', 'completion', 'feedback'];
+    const FEATURES = [
+        'restore', 'restorestatus', 'findcourses', 'completion', 'feedback', 'moduletypes', 'courseformats', 'replace',
+        'hidecourse', 'coursestate', 'blocks', 'badges', 'contentbackup', 'certificatetemplates', 'uploadlimits', 'forumtopics',
+    ];
 
     /**
      * Parameters.
@@ -56,6 +59,7 @@ class get_info extends base {
             'systemcapabilities' => [
                 'restorecourse' => has_capability('local/miwlab:restorecourse', $context),
                 'viewreports' => has_capability('local/miwlab:viewreports', $context),
+                'viewmoduletypes' => has_capability('local/miwlab:viewmoduletypes', $context),
             ],
         ];
     }
@@ -76,6 +80,7 @@ class get_info extends base {
             'systemcapabilities' => new external_single_structure([
                 'restorecourse' => new external_value(PARAM_BOOL, 'The account holds local/miwlab:restorecourse at site level'),
                 'viewreports' => new external_value(PARAM_BOOL, 'The account holds local/miwlab:viewreports at site level'),
+                'viewmoduletypes' => new external_value(PARAM_BOOL, 'The account holds local/miwlab:viewmoduletypes at site level'),
             ]),
         ]);
     }

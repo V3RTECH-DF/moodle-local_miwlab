@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="local/miwlab/db" VERSION="20261019" COMMENT="XMLDB file for Moodle local/miwlab"
+<XMLDB PATH="local/miwlab/db" VERSION="20261022" COMMENT="XMLDB file for Moodle local/miwlab"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd"
 >
@@ -9,7 +9,8 @@
         <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
         <FIELD NAME="restoreid" TYPE="char" LENGTH="32" NOTNULL="true" SEQUENCE="false" COMMENT="Public identifier of the restore"/>
         <FIELD NAME="categoryid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="Category of the new course"/>
-        <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="The new course, once created"/>
+        <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="The new course, once created; the course replaced, in mode replace"/>
+        <FIELD NAME="mode" TYPE="char" LENGTH="10" NOTNULL="true" DEFAULT="new" SEQUENCE="false" COMMENT="new: a new course in the category; replace: the content of courseid replaced (1.5.0)"/>
         <FIELD NAME="marker" TYPE="char" LENGTH="100" NOTNULL="false" SEQUENCE="false" COMMENT="MiwLab marker to write in the course ID number"/>
         <FIELD NAME="status" TYPE="int" LENGTH="2" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="0 queued, 1 running, 2 finished, 3 failed"/>
         <FIELD NAME="progress" TYPE="number" LENGTH="15" NOTNULL="true" DEFAULT="0" SEQUENCE="false" DECIMALS="14" COMMENT="0 to 1 while running"/>
@@ -18,12 +19,41 @@
         <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
         <FIELD NAME="timestarted" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
         <FIELD NAME="timefinished" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="backupfilename" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false" COMMENT="Mode replace: the backup made before, in the course backup area"/>
+        <FIELD NAME="rolledback" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Mode replace: the restore failed after deleting content and the backup was restored"/>
+        <FIELD NAME="expectedsignature" TYPE="char" LENGTH="40" NOTNULL="false" SEQUENCE="false" COMMENT="Mode replace: the state of the course the MiwLab knew, checked again before replacing"/>
+        <FIELD NAME="unchangedsince" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Mode replace: without the state, the course must not have been edited after this time"/>
+        <FIELD NAME="topicscreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="1.7.0: forum topics recreated from the package after the restore"/>
+        <FIELD NAME="topicsskipped" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="1.7.0: forum topics of the package that could not be created"/>
+        <FIELD NAME="topicsnote" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false" COMMENT="1.7.0: the first reason a topic was not created"/>
       </FIELDS>
       <KEYS>
         <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
       </KEYS>
       <INDEXES>
         <INDEX NAME="restoreid" UNIQUE="true" FIELDS="restoreid"/>
+        <INDEX NAME="timecreated" UNIQUE="false" FIELDS="timecreated"/>
+        <INDEX NAME="courseid-mode" UNIQUE="false" FIELDS="courseid, mode"/>
+      </INDEXES>
+    </TABLE>
+    <TABLE NAME="local_miwlab_backups" COMMENT="Content backups of courses made for the MiwLab (1.6.0), without any data of a person; the file is deleted once downloaded or after a day.">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="The course backed up"/>
+        <FIELD NAME="status" TYPE="int" LENGTH="2" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="0 queued, 1 running, 2 finished, 3 failed"/>
+        <FIELD NAME="filename" TYPE="char" LENGTH="255" NOTNULL="true" SEQUENCE="false" COMMENT="The backup file, in the course context, area contentbackup, item = id"/>
+        <FIELD NAME="filesize" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="contenthash" TYPE="char" LENGTH="40" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="secrethash" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false" COMMENT="SHA-256 of the secret returned once to the request that queued the backup; status, parts and deletion need it"/>
+        <FIELD NAME="errorcode" TYPE="char" LENGTH="100" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="errormessage" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="timefinished" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
         <INDEX NAME="timecreated" UNIQUE="false" FIELDS="timecreated"/>
       </INDEXES>
     </TABLE>

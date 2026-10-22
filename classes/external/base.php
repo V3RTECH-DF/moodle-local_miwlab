@@ -76,7 +76,7 @@ abstract class base extends external_api {
     protected static function course_for_reports(int $courseid): \stdClass {
         global $DB;
         $course = $DB->get_record('course', ['id' => $courseid]);
-        if (!$course || (int) $course->id === SITEID) {
+        if (!$course || (int) $course->id === (int) SITEID) {
             throw new \moodle_exception('error:coursenotfound', 'local_miwlab');
         }
         self::validate_category_context((int) $course->category);

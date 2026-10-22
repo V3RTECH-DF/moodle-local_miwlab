@@ -163,6 +163,18 @@ final class reports_test extends \advanced_testcase {
         return $feedback;
     }
 
+    public function test_the_site_is_never_a_course_to_read(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        // SITEID is the id of the site as Moodle read it (a string): the comparison must not miss it.
+        try {
+            get_course_completion::execute(SITEID);
+            $this->fail('The site should be refused');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('error:coursenotfound', $e->errorcode);
+        }
+    }
+
     public function test_feedback_analysis_withholds_text_unless_asked(): void {
         global $CFG;
         require_once($CFG->dirroot . '/mod/feedback/lib.php');
