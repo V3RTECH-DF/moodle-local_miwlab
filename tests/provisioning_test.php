@@ -71,6 +71,8 @@ final class provisioning_test extends \advanced_testcase {
         $this->assertContains('local_miwlab_get_backup_status', $functions);
         $this->assertContains('local_miwlab_delete_backup', $functions);
         $this->assertContains('local_miwlab_get_backup_chunk', $functions);
+        // 1.8.0 (issue 202): the batch read of the courses of some categories.
+        $this->assertContains('local_miwlab_get_courses_overview', $functions);
         // Security review: the service never downloads files (the backup comes in parts, only to the request that queued it).
         $this->assertSame(0, (int) $service->downloadfiles);
         $this->assertFalse(provisioning::account());

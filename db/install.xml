@@ -23,6 +23,7 @@
         <FIELD NAME="rolledback" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Mode replace: the restore failed after deleting content and the backup was restored"/>
         <FIELD NAME="expectedsignature" TYPE="char" LENGTH="40" NOTNULL="false" SEQUENCE="false" COMMENT="Mode replace: the state of the course the MiwLab knew, checked again before replacing"/>
         <FIELD NAME="unchangedsince" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Mode replace: without the state, the course must not have been edited after this time"/>
+        <FIELD NAME="forcediscard" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Mode replace: replace even if students have progress (1.7.3)"/>
         <FIELD NAME="topicscreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="1.7.0: forum topics recreated from the package after the restore"/>
         <FIELD NAME="topicsskipped" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="1.7.0: forum topics of the package that could not be created"/>
         <FIELD NAME="topicsnote" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false" COMMENT="1.7.0: the first reason a topic was not created"/>

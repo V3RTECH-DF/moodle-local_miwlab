@@ -69,7 +69,8 @@ class get_replace_check extends base {
             'withprogress' => $people['withprogress'],
             'missingcapabilities' => $missing,
             'inprogress' => $inprogress,
-            'canreplace' => !$missing && !$inprogress && !$unknown && $people['withprogress'] === 0,
+            'canreplace' => !$missing && !$inprogress && ($people['withprogress'] === 0 || $people['enrolled'] === 0)
+                && (empty($unknown) || $people['enrolled'] === 0),
             'unknownmodules' => $unknown,
             'canhide' => !replacer::missing_capabilities($context, replacer::HIDE_CAPABILITIES),
             'idnumber' => (string) $course->idnumber,

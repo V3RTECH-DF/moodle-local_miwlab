@@ -184,6 +184,7 @@ class restorer {
      */
     public static function run(int $id, int $fileid): void {
         global $CFG, $DB, $USER;
+        require_once($CFG->libdir . '/filelib.php');
         require_once($CFG->dirroot . '/backup/util/includes/restore_includes.php');
         require_once($CFG->dirroot . '/course/lib.php');
 

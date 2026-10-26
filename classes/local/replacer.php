@@ -243,7 +243,7 @@ class replacer {
     const KNOWN_MODULES = [
         'assign', 'quiz', 'forum', 'feedback', 'choice', 'lesson', 'h5pactivity', 'scorm', 'data', 'glossary', 'wiki', 'workshop',
         'survey', 'chat', 'customcert', 'questionnaire', 'lti', 'bigbluebuttonbn', 'hvp', 'attendance',
-        'page', 'label', 'url', 'resource', 'folder', 'book', 'imscp', 'subsection', 'qbank',
+        'page', 'label', 'url', 'resource', 'folder', 'book', 'imscp', 'subsection', 'qbank', 'board', 'coursecertificate',
     ];
 
     /**
@@ -331,19 +331,19 @@ class replacer {
     }
 
     /**
-     * Refuses when somebody has progress in the course, or when it has an activity of a module whose progress the plugin cannot
-     * read (it would not know).
+     * Refuses when somebody has progress in the course and there are people enrolled, or when it has an activity of a module whose
+     * progress the plugin cannot read and there are people enrolled (1.7.1, 1.7.2).
      *
      * @param int $courseid
      * @throws moodle_exception
      */
     public static function require_no_progress(int $courseid): void {
+        $people = self::people($courseid);
         $unknown = self::unknown_modules($courseid);
-        if ($unknown) {
+        if ($unknown && $people['enrolled'] > 0) {
             throw new moodle_exception('error:unknownmodules', 'local_miwlab', '', implode(', ', $unknown));
         }
-        $people = self::people($courseid);
-        if ($people['withprogress'] > 0) {
+        if ($people['withprogress'] > 0 && $people['enrolled'] > 0) {
             throw new moodle_exception('error:hasprogress', 'local_miwlab', '', (object) [
                 'people' => $people['withprogress'],
                 'enrolled' => $people['enrolled'],
@@ -363,7 +363,8 @@ class replacer {
      * @return array ['signature' => string, 'contentmodified' => int, 'activities' => int, 'sections' => int]
      */
     public static function course_state(int $courseid): array {
-        global $DB;
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/ddllib.php');
         $dbman = $DB->get_manager();
         $format = (string) $DB->get_field('course', 'format', ['id' => $courseid]);
         $cms = array_values($DB->get_records_sql(
@@ -462,6 +463,7 @@ class replacer {
      * @param string $marker
      * @param string $expectedsignature The state the MiwLab knows (course_state()), checked again before replacing; '' none.
      * @param int $unchangedsince Without the signature: the course must not have been edited after this time; 0 none.
+     * @param bool $forcediscard Whether to replace discarding existing progress.
      * @return stdClass The record of the restore.
      */
     public static function queue(
@@ -469,7 +471,8 @@ class replacer {
         \stored_file $file,
         string $marker,
         string $expectedsignature = '',
-        int $unchangedsince = 0
+        int $unchangedsince = 0,
+        bool $forcediscard = false
     ): stdClass {
         global $CFG, $DB, $USER;
         require_once($CFG->dirroot . '/backup/util/includes/restore_includes.php');
@@ -481,6 +484,7 @@ class replacer {
             'marker' => $marker === '' ? null : $marker,
             'expectedsignature' => $expectedsignature === '' ? null : $expectedsignature,
             'unchangedsince' => max(0, $unchangedsince),
+            'forcediscard' => $forcediscard ? 1 : 0,
             'status' => restorer::STATUS_QUEUED,
             'progress' => 0,
             'timecreated' => time(),
@@ -504,6 +508,7 @@ class replacer {
      */
     public static function run(stdClass $record, $file, string $tempdir): void {
         global $CFG, $DB, $USER;
+        require_once($CFG->libdir . '/filelib.php');
         require_once($CFG->dirroot . '/backup/util/includes/backup_includes.php');
         require_once($CFG->dirroot . '/backup/util/includes/restore_includes.php');
         require_once($CFG->dirroot . '/course/lib.php');
@@ -523,7 +528,9 @@ class replacer {
             $context = \context_course::instance($course->id);
             // The capabilities and the progress are checked again: they may have changed while the replacement waited.
             self::require_capabilities($context, $course);
-            self::require_no_progress($course->id);
+            if (empty($record->forcediscard)) {
+                self::require_no_progress($course->id);
+            }
             self::require_unchanged($course->id, (string) ($record->expectedsignature ?? ''), (int) ($record->unchangedsince ?? 0));
             if (!$file || $file->is_directory()) {
                 throw new moodle_exception('error:draftfilenotfound', 'local_miwlab');
@@ -543,7 +550,9 @@ class replacer {
             $backupname = self::backup_name($course);
             $DB->set_field('local_miwlab_restores', 'backupfilename', $backupname, ['id' => $record->id]);
             // Somebody may have made progress while the backup ran.
-            self::require_no_progress($course->id);
+            if (empty($record->forcediscard)) {
+                self::require_no_progress($course->id);
+            }
 
             // 2. What deleting the content would take from the course itself, kept aside.
             $identity = self::identity($course, $context, (int) $record->id);
@@ -658,7 +667,9 @@ class replacer {
      * @throws moodle_exception error:backupfailed, with the reason
      */
     protected static function backup(int $courseid): \stored_file {
-        global $USER;
+        global $CFG, $USER;
+        require_once($CFG->libdir . '/filelib.php');
+        require_once($CFG->dirroot . '/backup/util/includes/backup_includes.php');
         try {
             if (defined('PHPUNIT_TEST') && PHPUNIT_TEST && self::$backuphook) {
                 $file = call_user_func(self::$backuphook, $courseid);
@@ -934,7 +945,9 @@ class replacer {
      * @throws moodle_exception
      */
     protected static function roll_back(?stdClass $course, ?\stored_file $backup, string $restoreid): void {
-        global $USER;
+        global $CFG, $USER;
+        require_once($CFG->libdir . '/filelib.php');
+        require_once($CFG->dirroot . '/backup/util/includes/restore_includes.php');
         if (!$course || !$backup) {
             throw new moodle_exception('error:backupfailed', 'local_miwlab', '', '');
         }

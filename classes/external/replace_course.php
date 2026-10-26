@@ -65,6 +65,12 @@ class replace_course extends base {
                 VALUE_DEFAULT,
                 0
             ),
+            'forcediscard' => new external_value(
+                PARAM_BOOL,
+                'Force replacement discarding existing progress',
+                VALUE_DEFAULT,
+                false
+            ),
         ]);
     }
 
@@ -77,6 +83,7 @@ class replace_course extends base {
      * @param string $marker
      * @param string $expectedsignature
      * @param int $unchangedsince
+     * @param bool $forcediscard
      * @return array
      */
     public static function execute(
@@ -85,7 +92,8 @@ class replace_course extends base {
         string $filename = '',
         string $marker = '',
         string $expectedsignature = '',
-        int $unchangedsince = 0
+        int $unchangedsince = 0,
+        bool $forcediscard = false
     ): array {
         $params = self::validate_parameters(self::execute_parameters(), [
             'courseid' => $courseid,
@@ -94,6 +102,7 @@ class replace_course extends base {
             'marker' => $marker,
             'expectedsignature' => $expectedsignature,
             'unchangedsince' => $unchangedsince,
+            'forcediscard' => $forcediscard,
         ]);
         $course = replacer::course($params['courseid']);
         self::validate_category_context((int) $course->category);
@@ -105,10 +114,19 @@ class replace_course extends base {
         if (replacer::in_progress($course->id)) {
             throw new \moodle_exception('error:replaceinprogress', 'local_miwlab');
         }
-        replacer::require_no_progress($course->id);
+        if (!$params['forcediscard']) {
+            replacer::require_no_progress($course->id);
+        }
         replacer::require_unchanged($course->id, $params['expectedsignature'], $params['unchangedsince']);
         $file = restorer::draft_file($params['draftitemid'], $params['filename']);
-        $record = replacer::queue($course, $file, $params['marker'], $params['expectedsignature'], $params['unchangedsince']);
+        $record = replacer::queue(
+            $course,
+            $file,
+            $params['marker'],
+            $params['expectedsignature'],
+            $params['unchangedsince'],
+            $params['forcediscard']
+        );
         return restorer::export($record);
     }
 

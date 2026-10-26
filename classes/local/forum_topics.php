@@ -261,6 +261,8 @@ class forum_topics {
      * @throws \moodle_exception error:forumtopicskeep when the topics cannot be moved aside (none will be created).
      */
     public static function keep(string $dir): string {
+        global $CFG;
+        require_once($CFG->libdir . '/filelib.php');
         if (!is_file($dir . '/' . self::PACKAGE_JSON)) {
             return '';
         }

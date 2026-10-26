@@ -1,5 +1,49 @@
 # Changes
 
+## 1.8.0 (2026102503)
+
+- New web service function `local_miwlab_get_courses_overview`: the courses of some categories (and, by default, of the categories
+  below them), in batch and paginated (up to 500 courses per call, `limitfrom`/`limitnum`, `next` is -1 on the last page). For each course
+  it returns only numbers: the students (active enrolment, with a role of the student archetype in the course or above it, as
+  `local_miwlab_get_course_completion` counts them), whether the course measures completion (completion on in the site and in the course
+  and at least one tracked activity, or completion criteria), and how many students completed (by the completion of the course when it has
+  criteria, otherwise by every tracked activity complete). Teachers, suspended or expired enrolments and deleted accounts never count, and
+  the numbers are the same, course by course, as the ones of the read made one course at a time. It needs `local/miwlab:viewreports` in
+  the context of each category asked; no new capability. The MiwLab uses it once a day, outside the busy hours, and on demand, to show
+  the enrolled people and the completion of the whole Moodle in its management screens. No person leaves Moodle: not even an id.
+- The "MiwLab (local_miwlab)" service gets the function on install and on upgrade. A service made by hand needs it added to its functions.
+- The subcategories added by the expansion are checked one by one for `local/miwlab:viewreports`: where it is prohibited they stay out and `categoriesleftout` says how many.
+- Every function loads the Moodle libraries it uses itself (`completionlib`, `filelib`, `ddllib`, the backup and restore includes): a
+  web service request does not load them, and the unit tests, which have everything loaded, do not show it. Checked by calling every
+  function of the service through REST in a disposable Moodle.
+- The texts of `local/miwlab:replacecourse` and of `local_miwlab_replace_course` say what they do since 1.7.3 (a backup without user
+  data first; with progress, only when the call asks to discard it), and the text of `local/miwlab:viewreports` covers the counts of
+  the courses of whole categories too. In English and in Portuguese (pt_br).
+- Nothing changes in the tables nor in the "MiwLab" role: the upgrade steps 2026102501, 2026102502 and 2026102503 only record the
+  version (the third build makes Moodle read the texts again).
+- `local_miwlab_get_info` lists the feature `coursesoverview`.
+
+## 1.7.3 (2026102302)
+
+- Optional parameter `forcediscard` in `local_miwlab_replace_course`: allows replacing the content of an existing course even when
+  students have progress, discarding existing progress/grades while keeping enrolments, when requested consciously. The automated
+  safety backup of the course is still performed before replacing to guarantee safe rollback.
+
+## 1.7.2 (2026102301)
+
+- Replacing the content of a course (`local_miwlab_replace_course`) and checking its replacement status (`local_miwlab_get_replace_check`)
+  now allow replacement when there are zero people enrolled (`enrolled === 0`), even if test records or administrative accesses generated progress entries (`withprogress > 0`),
+  as there are no enrolled students or learner grades to protect. Courses with 1 or more enrolments continue to block replacement when any progress exists
+  to prevent accidental data loss.
+
+## 1.7.1 (2026102201)
+
+- Replacing the content of a course (`local_miwlab_replace_course`) and checking its replacement status (`local_miwlab_get_replace_check`)
+  no longer refuses courses with activities of unmapped modules (`unknownmodules`) when there are zero people enrolled (`enrolled === 0`),
+  as there is no student work or progress to protect. Courses with 1 or more enrolments continue to require every module to be known to
+  prevent accidental data loss.
+- Added `board` (`mod_board`) and `coursecertificate` (`mod_coursecertificate`) to `KNOWN_MODULES` in `replacer`.
+
 ## 1.7.0 (2026102110)
 
 - New web service function `local_miwlab_get_certificate_templates`: the certificate templates of the site (`tool_certificate`),

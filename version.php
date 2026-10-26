@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'local_miwlab';
-$plugin->version = 2026102110;
-$plugin->release = '1.7.0';
+$plugin->version = 2026102503;
+$plugin->release = '1.8.0';
 $plugin->requires = 2022112800;
 $plugin->supported = [401, 503];
 $plugin->maturity = MATURITY_STABLE;

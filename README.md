@@ -26,7 +26,7 @@ shows the token and the site address, to paste in the MiwLab. The same page gene
 working), revokes the key or deletes the account. Uninstalling the plugin removes the service and its tokens, the role and
 the account it created.
 
-With that token, the MiwLab uses the plugin to do nine things Moodle core web services do not offer:
+With that token, the MiwLab uses the plugin to do ten things Moodle core web services do not offer:
 
 1. **List the activity and resource types installed on the site** (enabled or not, standard or add-on), without depending
    on a course where the account can add activities, and **the course formats enabled on the site** (the ones the course
@@ -40,8 +40,11 @@ With that token, the MiwLab uses the plugin to do nine things Moodle core web se
    open answers leaves Moodle only when the call asks for it. A feedback that is not anonymous is refused.
 5. **Replace the content of the course a MiwLab course came from** (1.5.0), keeping the course itself (id, address, names,
    category, summary, image, format, dates, visibility, enrolments, roles and groups): refused when somebody has progress
-   there or the course changed in Moodle since the MiwLab knew it; a backup of the course is made first, kept in its course
-   backup area, and nothing is replaced when it fails. And **hide the old course** once a new one takes its place.
+   there and people are enrolled (from 1.7.2 a course with nobody enrolled is replaced whatever traces it has), or the course
+   changed in Moodle since the MiwLab knew it; a backup of the course is made first, kept in its course backup area, and
+   nothing is replaced when it fails. From 1.7.3 the call may ask, with `forcediscard`, to replace it even with progress: the
+   progress and the grades are discarded and the enrolments kept, and the backup made first, having no user data, does not
+   bring them back; the MiwLab asks for it only after the person who sends the course confirms that the progress will be lost. And **hide the old course** once a new one takes its place.
 6. **List the blocks installed on the site** (1.6.0), so that a course sent by the MiwLab carries a third-party block (the
    progress bar of its light gamification) only when the site has it; and **activate the course badges a package brings**
    once the plugin restores it (Moodle always restores course badges inactive). Only the badges the restore brought in are
@@ -70,6 +73,10 @@ With that token, the MiwLab uses the plugin to do nine things Moodle core web se
    restore that cannot create a topic (a missing capability, say) finishes all the same and reports how many topics were
    created and not, with the first reason. What the account of the MiwLab does in a course (the topics it recreates, for
    instance) is not counted as the progress of a person when the plugin decides whether a course can be replaced.
+10. **Read, in batch, the numbers of the courses of whole categories** (1.8.0), so that the management screens of the MiwLab show the
+   whole Moodle and not only the courses it made: `local_miwlab_get_courses_overview` returns, for up to 500 courses per call, the
+   students enrolled, whether each course measures completion and how many completed. Counts only, made in the database; teachers,
+   suspended or expired enrolments and deleted accounts are never counted; the right is checked in each category asked.
 
 The plugin makes no network request: it only answers the web service calls it receives. It stores no personal data
 (privacy API: null provider); it keeps the progress of each restore, without the person who asked for it, for 30 days
@@ -100,7 +107,7 @@ visit Site administration > Notifications). The upgrade adds the new columns of 
 the "MiwLab (local_miwlab)" service and resets the "MiwLab" role to the capabilities of the current release. The key does not
 change and nothing has to be generated again. A service made by hand (see below) is not touched: add to it the functions that
 are new in the release (1.7.0: `local_miwlab_get_certificate_templates`, `local_miwlab_get_upload_limits` and
-`local_miwlab_get_forum_topics`) and give its role the capabilities that go with them. The list of changes by release is in
+`local_miwlab_get_forum_topics`; 1.8.0: `local_miwlab_get_courses_overview`) and give its role the capabilities that go with them. The list of changes by release is in
 `CHANGES.md`.
 
 ## Configuration after installing
@@ -111,7 +118,7 @@ Site administration > Plugins > Local plugins > **MiwLab key** (or search "MiwLa
 
 The role "MiwLab" holds, at site level, only what the functions of the service need. The writes are the restore of a
 package as a new course and, from 1.5.0, the replacement of the content of a course where nobody has progress (after a
-backup of it) and hiding a course, each through a plugin function that checks its own capability in the course. Each
+backup of it; from 1.7.3, also discarding the progress when the call asks for it with `forcediscard`) and hiding a course, each through a plugin function that checks its own capability in the course. Each
 capability and the function that needs it:
 
 | Capability | Why |
@@ -124,7 +131,7 @@ capability and the function that needs it:
 | `moodle/course:ignoreavailabilityrestrictions` | `core_course_get_contents` returns the activities an access restriction hides from the account |
 | `moodle/category:viewhiddencategories` | `core_course_get_categories` lists hidden categories too |
 | `moodle/restore:restorecourse`, `moodle/course:create`, `local/miwlab:restorecourse` | `local_miwlab_get_restore_categories`, `local_miwlab_restore_course` (restore as a new course) |
-| `local/miwlab:viewreports` | `local_miwlab_get_course_completion`, `_get_course_feedbacks`, `_get_feedback_analysis`, `_find_courses` (counts only), `_get_course_state`, `_get_forum_types` (1.6.0, type of each forum) |
+| `local/miwlab:viewreports` | `local_miwlab_get_courses_overview` (1.8.0: counts of the courses of whole categories, checked in each category), `local_miwlab_get_course_completion`, `_get_course_feedbacks`, `_get_feedback_analysis`, `_find_courses` (counts only), `_get_course_state`, `_get_forum_types` (1.6.0, type of each forum) |
 | `local/miwlab:viewmoduletypes` | `local_miwlab_get_module_types`, `local_miwlab_get_course_formats`, `local_miwlab_get_blocks` (names only), `local_miwlab_get_certificate_templates` and `local_miwlab_get_upload_limits` (1.7.0: names and ids of templates; settings of the site) |
 | `local/miwlab:replacecourse`, `moodle/backup:backupcourse`, `moodle/restore:restorecourse`, `moodle/restore:configure`, `moodle/restore:rolldates` | `local_miwlab_get_replace_check`, `local_miwlab_replace_course` (1.5.0): the backup made before, the restore into the course, its settings (keep enrolments, roles and groups) and its dates (follow the start of the course) |
 | `local/miwlab:hidecourse`, `moodle/course:visibility` | `local_miwlab_hide_course` (1.5.0) |
@@ -150,7 +157,7 @@ A key made by hand works too:
    on, the authentication method of the account must be enabled (Site administration > Plugins > Authentication >
    Manage authentication): an account with the web service authentication needs it on.
 3. Site administration > Server > Web services > External services: in the service used by the MiwLab key (or a new
-   one, with any name but "MiwLab (local_miwlab)", the name of the plugin service), add the twenty-three `local_miwlab_*` functions below and enable **Can upload files** (the package is uploaded with
+   one, with any name but "MiwLab (local_miwlab)", the name of the plugin service), add the twenty-four `local_miwlab_*` functions below and enable **Can upload files** (the package is uploaded with
    `webservice/upload.php` before the restore). **Can download files** stays off: the backup of the content of a course
    comes in parts through `local_miwlab_get_backup_chunk`.
 4. Give the role of the integration account:
@@ -231,6 +238,12 @@ ws local_miwlab_get_backup_chunk -d backupid=<n> -d secret=<s> -d offset=0 | jq 
 #    (repeat with offset = the bytes already read until "eof" is true; each part has up to 4 MB)
 sha1sum content.mbz                           # the contenthash above
 ws local_miwlab_delete_backup -d backupid=<n> -d secret=<s>
+
+# 8. The numbers of the courses of whole categories, in batch (1.8.0): students, whether each measures completion, how many
+#    completed. Counts only; the right is checked in each category asked, and subcategories without it are left out.
+ws local_miwlab_get_courses_overview -d 'categoryids[0]=<category id>' -d includesubcategories=1 -d limitfrom=0 -d limitnum=500
+#    -> {"total": n, "next": -1, "courses": [{"id", "categoryid", "students", "measures", "completedby", "completed", ...}],
+#        "categoriesleftout": 0, ...}   (repeat with limitfrom = next while next is not -1)
 ```
 
 What to expect besides the success cases: an account without the capabilities gets `error:missingcapabilities` (the
@@ -438,10 +451,11 @@ Needs `local/miwlab:replacecourse` in the course. The course, the counts of peop
   "format": "topics", "courseurl": "https://moodle.example/course/view.php?id=7",
   "enrolled": 12,                  // people enrolled, active or not (the MiwLab account aside)
   "withprogress": 0,               // people with an activity or the course completed, a grade, a submission, an attempt,
-                                   // an answer, a post or a note: with one or more, the course is not replaced
+                                   // an answer, a post or a note: with one or more and people enrolled, the course is
+                                   // not replaced (1.7.2), unless local_miwlab_replace_course is called with forcediscard (1.7.3)
   "missingcapabilities": [],       // capabilities the account lacks in the course to replace it
   "inprogress": false, "canreplace": true, "canhide": true, "idnumber": "",
-  "unknownmodules": [],            // modules of activities whose progress the plugin does not read: they refuse the replacement
+  "unknownmodules": [],            // modules of activities whose progress the plugin does not read: they refuse replacement when enrolled > 0 (1.7.1)
   "signature": "3f2c…", "contentmodified": 1792397100 }   // as local_miwlab_get_course_state
 ```
 
@@ -455,13 +469,16 @@ Needs `local/miwlab:replacecourse` in the course. The course, the counts of peop
 | marker | string, optional: the MiwLab marker, written in the ID number only when the course has none or a MiwLab one |
 | expectedsignature | string, optional: refused (`error:coursechanged`) if the state of the course is another |
 | unchangedsince | int, optional: without the signature, refused if the content was edited after this time |
+| forcediscard | bool, optional, default false (1.7.3): replace even when somebody has progress, discarding the progress and the grades and keeping the enrolments |
 
 Needs the seven capabilities of the table above in the course (the five of 1.5.0 and, from 1.6.0, the two of the badges). Progress is any trace of a person the deletion would destroy
 (completion, any grade of any grade item, submission — a group submission counts for each member of the group, and even
 when the group has no member —, assignment grade not released yet, record kept without the person (anonymous answer), attempt, answer, post, glossary entry, wiki page, workshop submission
 or assessment, certificate or course badge issued, course competency rated or with evidence, meeting joined, attendance,
-note); a course with an activity of a module the plugin does not read is refused too (`error:unknownmodules`, and
-`unknownmodules` in `local_miwlab_get_replace_check`). Refused at once with `error:hasprogress`, `error:unknownmodules`,
+note); a course with an activity of a module the plugin does not read is refused too when people are enrolled (`error:unknownmodules`, and
+`unknownmodules` in `local_miwlab_get_replace_check`; from 1.7.1, allowed when enrolled is 0). From 1.7.2 progress does not
+refuse a course with nobody enrolled, and from 1.7.3 `forcediscard` skips the progress check (at once and in the task): what the
+deletion destroys is not in the backup made first, which has no user data. Refused at once with `error:hasprogress`, `error:unknownmodules`,
 `error:missingcoursecapabilities`, `error:coursechanged`, `error:replaceinprogress` or `error:coursenotfound` (the site
 course is never replaced). Queued like a restore and followed with `local_miwlab_get_restore_status` (`mode` = `replace`).
 The task checks capabilities, progress and state again, makes the backup (without user data), checks progress again,
@@ -580,6 +597,33 @@ not count. The counts are made in the database: not even the ids of the people a
 
 Only activities with completion tracking are listed. The plugin returns raw counts; any minimum or rounding is for the
 caller to apply.
+
+### local_miwlab_get_courses_overview (1.8.0)
+
+| Parameter | Type |
+|---|---|
+| categoryids | int[] (1 to 200 categories) |
+| includesubcategories | bool, default true |
+| limitfrom | int, default 0 (courses to skip, by course id) |
+| limitnum | int, default and maximum 500 |
+
+Needs `local/miwlab:viewreports` in the context of **each** category asked (a right given in a category reaches the ones below it);
+one category without it refuses the whole call. A subcategory the expansion adds is checked on its own: where the right is prohibited it stays out, and `categoriesleftout` says how many stayed. Counts only, made in the database, in a few queries for the whole page: not even the
+ids of the people are read. The front page is never listed.
+
+```
+{ "total": 640, "next": 500,                        // courses in the categories; limitfrom of the next page, -1 on the last
+  "courses": [ { "id": 7, "categoryid": 3, "fullname": "...", "shortname": "...", "visible": true,
+                 "students": 12,                    // active enrolled users with the student archetype in the course or above it
+                 "completionenabled": true, "trackedactivities": 2,
+                 "measures": true,                  // completion on in the site and in the course, and a tracked activity or criteria
+                 "completedby": "activities",       // course (completion criteria), activities (every tracked activity) or none
+                 "completed": 9 } ],                // students who completed; 0 when the course does not measure
+  "timegenerated": 1792397300 }
+```
+
+For the same course the numbers are the ones of `local_miwlab_get_course_completion` (`students` equal; `completed` equal to its
+`coursecompletion.completed` when `completedby` is `course`).
 
 ### local_miwlab_get_course_feedbacks
 

@@ -154,5 +154,31 @@ function xmldb_local_miwlab_upgrade($oldversion) {
         \local_miwlab\local\provisioning::ensure_role();
         upgrade_plugin_savepoint(true, 2026102110, 'local', 'miwlab');
     }
+    if ($oldversion < 2026102302) {
+        // 1.7.3: forcediscard parameter in course replacement (issue 197).
+        $table = new xmldb_table('local_miwlab_restores');
+        $field = new xmldb_field('forcediscard', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0', 'unchangedsince');
+        if ($dbman->table_exists($table) && !$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+        upgrade_plugin_savepoint(true, 2026102302, 'local', 'miwlab');
+    }
+    if ($oldversion < 2026102501) {
+        // 1.8.0: the batch read of the courses of some categories (issue 202). Nothing changes in the tables nor in the role:
+        // Moodle adds the function to the "MiwLab (local_miwlab)" service when it reads db/services.php right after this step.
+        upgrade_plugin_savepoint(true, 2026102501, 'local', 'miwlab');
+    }
+    if ($oldversion < 2026102502) {
+        // 1.8.0 (second build): the functions load the Moodle libraries they use (filelib, completionlib, the backup
+        // includes), and the batch read leaves out the subcategories the account has no right in.
+        // Nothing changes in the tables nor in the role.
+        upgrade_plugin_savepoint(true, 2026102502, 'local', 'miwlab');
+    }
+    if ($oldversion < 2026102503) {
+        // 1.8.0 (third build): the texts of local/miwlab:replacecourse, local/miwlab:viewreports and local_miwlab_replace_course
+        // describe what they do since 1.7.3 and 1.8.0. Nothing changes in the tables nor in the role; the new build makes Moodle
+        // read the strings and the service descriptions again.
+        upgrade_plugin_savepoint(true, 2026102503, 'local', 'miwlab');
+    }
     return true;
 }

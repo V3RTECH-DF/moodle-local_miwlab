@@ -65,6 +65,13 @@ $functions = [
         'type' => 'read',
         'capabilities' => 'local/miwlab:viewreports',
     ],
+    'local_miwlab_get_courses_overview' => [
+        'classname' => 'local_miwlab\external\get_courses_overview',
+        'description' => 'The courses of some categories, in batch: students, whether each measures completion and how many '
+            . 'completed (counts only, no person).',
+        'type' => 'read',
+        'capabilities' => 'local/miwlab:viewreports',
+    ],
     'local_miwlab_get_course_feedbacks' => [
         'classname' => 'local_miwlab\external\get_course_feedbacks',
         'description' => 'Feedback activities of a course, whether each is anonymous, and their questions.',
@@ -91,7 +98,8 @@ $functions = [
     ],
     'local_miwlab_replace_course' => [
         'classname' => 'local_miwlab\external\replace_course',
-        'description' => 'Queues the replacement of the content of a course by a package, after a backup; refused with progress.',
+        'description' => 'Queues the replacement of the content of a course by a package, after a backup without user data; with '
+            . 'progress, only when asked to discard it (forcediscard).',
         'type' => 'write',
         'capabilities' => 'local/miwlab:replacecourse, moodle/backup:backupcourse, moodle/restore:restorecourse, '
             . 'moodle/restore:configure, moodle/restore:rolldates',
@@ -209,6 +217,7 @@ $services = [
             'local_miwlab_delete_backup',
             'local_miwlab_find_courses',
             'local_miwlab_get_course_completion',
+            'local_miwlab_get_courses_overview',
             'local_miwlab_get_course_feedbacks',
             'local_miwlab_get_feedback_analysis',
         ],

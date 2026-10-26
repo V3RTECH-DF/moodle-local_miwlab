@@ -280,6 +280,34 @@ final class replace_course_test extends \advanced_testcase {
         $this->assertContains('Velha', $this->activity_names($course->id));
     }
 
+    public function test_progress_can_be_discarded_with_forcediscard(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $category = $this->getDataGenerator()->create_category();
+        [$course, $student, $forum] = $this->old_course($category);
+        $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $user = $this->user_in_category($category, array_merge(replacer::CAPABILITIES, ['moodle/course:view']));
+        $draftitemid = $this->package_in_draft($user);
+        $this->progress('grade', $course, $student, $forum);
+
+        $this->setUser($user);
+        $check = base::clean_returnvalue(get_replace_check::execute_returns(), get_replace_check::execute($course->id));
+        $this->assertSame(2, $check['enrolled']);
+        $this->assertSame(1, $check['withprogress']);
+        $this->assertFalse($check['canreplace']);
+
+        $queued = base::clean_returnvalue(
+            replace_course::execute_returns(),
+            replace_course::execute($course->id, $draftitemid, '', 'miwlab:curso-1:v2', '', 0, true)
+        );
+        $this->assertSame('queued', $queued['status']);
+        $this->assertSame('replace', $queued['mode']);
+        $this->run_queued($user);
+        $status = base::clean_returnvalue(get_restore_status::execute_returns(), get_restore_status::execute($queued['restoreid']));
+        $this->assertSame('finished', $status['status'], $status['errormessage']);
+        $this->assertSame(['Conversa', 'Leitura'], $this->activity_names($course->id));
+    }
+
     public function test_what_is_not_progress_does_not_block(): void {
         global $DB;
         $this->resetAfterTest();
@@ -987,6 +1015,90 @@ final class replace_course_test extends \advanced_testcase {
         replacer::$knownmoduleshook = null;
         $this->assertSame([], get_replace_check::execute($course->id)['unknownmodules']);
         $this->assertSame('queued', replace_course::execute($course->id, $draftitemid)['status']);
+    }
+
+    public function test_an_activity_of_unknown_module_allows_replacement_when_zero_enrolled(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $category = $this->getDataGenerator()->create_category();
+        $course = $this->getDataGenerator()->create_course([
+            'fullname' => 'Curso antigo vazio',
+            'shortname' => 'ANTIGOSEMALUNO',
+            'category' => $category->id,
+            'summary' => 'Resumo antigo',
+            'enablecompletion' => 1,
+            'visible' => 1,
+        ]);
+        $this->getDataGenerator()->create_module('page', ['course' => $course->id, 'name' => 'Velha']);
+        $this->getDataGenerator()->create_module('forum', ['course' => $course->id, 'name' => 'Forum antigo']);
+        get_file_storage()->create_file_from_string([
+            'contextid' => \context_course::instance($course->id)->id,
+            'component' => 'backup',
+            'filearea' => 'course',
+            'itemid' => 0,
+            'filepath' => '/',
+            'filename' => 'backup-antigo.mbz',
+        ], 'conteudo');
+        $user = $this->user_in_category($category, replacer::CAPABILITIES);
+        $draftitemid = $this->package_in_draft($user);
+
+        // Taken as a module the progress queries do not cover: the forum of the course.
+        replacer::$knownmoduleshook = array_values(array_diff(replacer::KNOWN_MODULES, ['forum']));
+
+        $this->setUser($user);
+        $check = get_replace_check::execute($course->id);
+        $this->assertSame(0, $check['enrolled']);
+        $this->assertSame(['forum'], $check['unknownmodules']);
+        $this->assertTrue($check['canreplace']);
+
+        $res = replace_course::execute($course->id, $draftitemid);
+        $this->assertSame('queued', $res['status']);
+
+        replacer::$knownmoduleshook = null;
+    }
+
+    public function test_progress_allows_replacement_when_zero_enrolled(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $category = $this->getDataGenerator()->create_category();
+        $course = $this->getDataGenerator()->create_course([
+            'fullname' => 'Curso antigo sem inscritos',
+            'shortname' => 'ANTIGOSEMINSCRITOS',
+            'category' => $category->id,
+            'summary' => 'Resumo antigo',
+            'enablecompletion' => 1,
+            'visible' => 1,
+        ]);
+        $this->getDataGenerator()->create_module('page', ['course' => $course->id, 'name' => 'Velha']);
+        $forum = $this->getDataGenerator()->create_module('forum', ['course' => $course->id, 'name' => 'Forum antigo']);
+        get_file_storage()->create_file_from_string([
+            'contextid' => \context_course::instance($course->id)->id,
+            'component' => 'backup',
+            'filearea' => 'course',
+            'itemid' => 0,
+            'filepath' => '/',
+            'filename' => 'backup-antigo.mbz',
+        ], 'conteudo');
+        $user = $this->user_in_category($category, replacer::CAPABILITIES);
+        $draftitemid = $this->package_in_draft($user);
+
+        // Um usuário não inscrito (ex.: professor ou administrador em teste) tem progresso no curso.
+        $tester = $this->getDataGenerator()->create_user();
+        $this->progress('post', $course, $tester, $forum);
+
+        $this->setUser($user);
+        $check = base::clean_returnvalue(get_replace_check::execute_returns(), get_replace_check::execute($course->id));
+        $this->assertSame(0, $check['enrolled']);
+        $this->assertSame(1, $check['withprogress']);
+        $this->assertTrue($check['canreplace']);
+
+        $res = replace_course::execute($course->id, $draftitemid);
+        $this->assertSame('queued', $res['status']);
+    }
+
+    public function test_board_and_coursecertificate_are_in_known_modules(): void {
+        $this->assertContains('board', replacer::KNOWN_MODULES);
+        $this->assertContains('coursecertificate', replacer::KNOWN_MODULES);
     }
 
     public function test_every_module_of_this_moodle_with_data_of_people_is_known_or_refused(): void {
