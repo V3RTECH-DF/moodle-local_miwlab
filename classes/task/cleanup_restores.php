@@ -61,6 +61,10 @@ class cleanup_restores extends \core\task\scheduled_task {
         );
         // 1.6.0: the content backups the MiwLab did not delete (downloaded, failed or stalled) go after a day.
         \local_miwlab\local\exporter::cleanup();
+        // 1.9.0 (issue 204): the full backups (with the people) whose days are over, only the files the plugin registered.
+        \local_miwlab\local\fullcopies::cleanup();
+        // 1.9.0 (issue 204): the previews of the safe update that expired, and the packages kept for them.
+        \local_miwlab\local\updater::cleanup();
         $DB->delete_records_select(
             'local_miwlab_restores',
             'status IN (:finished, :failed) AND timefinished < :limit',

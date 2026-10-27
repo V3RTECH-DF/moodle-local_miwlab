@@ -74,11 +74,21 @@ class provisioning {
      *   progress, after a backup of it, keeping enrolments, roles, groups and the course configuration (the restore settings
      *   need moodle/restore:configure; the dates follow the start of the course with moodle/restore:rolldates). No
      *   moodle/course:update: the course configuration is not overwritten.
+     * - local/miwlab:updatecourse (1.9.0, issue 204): local_miwlab_preview_update and local_miwlab_apply_update, the update in
+     *   place of a course where people study, with the same backup, restore and configure permissions as the replacement (the
+     *   new activities come by a restore that only adds). No moodle/course:update, no deletion permission.
      * - local/miwlab:hidecourse, moodle/course:visibility (1.5.0): local_miwlab_hide_course, for the old course once a new
      *   one takes its place.
      * - local/miwlab:backupcourse (1.6.0, with moodle/backup:backupcourse): local_miwlab_backup_course, _get_backup_status and
-     *   _delete_backup, the backup of the CONTENT of a course without any data of a person (the role has no
-     *   moodle/backup:userinfo), downloaded by the MiwLab to bring the whole content of the course.
+     *   _delete_backup, the backup of the CONTENT of a course without any data of a person, downloaded by the MiwLab to bring
+     *   the whole content of the course.
+     * - moodle/backup:userinfo (1.9.0, issue 204): ONLY for the full backup (with the people: enrolments, roles, grades,
+     * completion,
+     *   submissions, posts) that local_miwlab_replace_course makes before a replacement that discards progress, kept only in the
+     *   course backup area and deleted after the days the organisation chose. It is a divergence from the least privilege of 1.8.0,
+     *   decided to give the descent its only way back. Every other backup the plugin makes (the one before a replacement without
+     *   discard and the content backup) sets "include users" off explicitly and checks it after setting (backup_scope), so the
+     *   permission changes nothing for them.
      *
      * Plus every mod/<module>:view of the site (see capabilities()): core_course_get_contents skips an activity whose
      * mod/<module>:view the account lacks (cm_info::is_user_access_restricted_by_capability), so without them a quiz, an
@@ -98,6 +108,7 @@ class provisioning {
         'local/miwlab:viewreports',
         'local/miwlab:viewmoduletypes',
         'local/miwlab:replacecourse',
+        'local/miwlab:updatecourse',
         'moodle/backup:backupcourse',
         'moodle/restore:configure',
         'moodle/restore:rolldates',
@@ -106,6 +117,7 @@ class provisioning {
         'moodle/badges:deletebadge',
         'moodle/badges:configurecriteria',
         'local/miwlab:backupcourse',
+        'moodle/backup:userinfo',
         // 1.6.0: a package with the content of a course imported from Moodle carries its question bank; the restore (new course or
         // replacement) creates the question categories and questions only for an account that can manage and add them there.
         'moodle/question:managecategory',

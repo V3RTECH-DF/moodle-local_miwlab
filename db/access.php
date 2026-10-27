@@ -60,6 +60,19 @@ $capabilities = [
             'manager' => CAP_ALLOW,
         ],
     ],
+    // Update a course in place, only what is safe for the people who study in it (1.9.0, issue 204): names and texts of the
+    // activities, access restrictions, visibility, order, and the new activities and sections; hides what the MiwLab removed.
+    // Never deletes and never touches a grade, a submission or a post. The only thing that can make somebody lose something is the
+    // person's explicit choice to replace the completion criteria of a course somebody concluded (the preview says how many), and
+    // then only with the conscious confirmation and after a full backup (hence RISK_DATALOSS).
+    'local/miwlab:updatecourse' => [
+        'riskbitmask' => RISK_XSS | RISK_CONFIG | RISK_DATALOSS,
+        'captype' => 'write',
+        'contextlevel' => CONTEXT_COURSE,
+        'archetypes' => [
+            'manager' => CAP_ALLOW,
+        ],
+    ],
     // Hide a course, for the MiwLab, once a new course takes its place (1.5.0).
     'local/miwlab:hidecourse' => [
         'captype' => 'write',

@@ -16,6 +16,7 @@
 
 namespace local_miwlab\external;
 
+use local_miwlab\local\fullcopies;
 use local_miwlab\local\replacer;
 use local_miwlab\local\restorer;
 
@@ -286,7 +287,11 @@ final class replace_course_test extends \advanced_testcase {
         $category = $this->getDataGenerator()->create_category();
         [$course, $student, $forum] = $this->old_course($category);
         $this->getDataGenerator()->create_and_enrol($course, 'student');
-        $user = $this->user_in_category($category, array_merge(replacer::CAPABILITIES, ['moodle/course:view']));
+        $user = $this->user_in_category($category, array_merge(
+            replacer::CAPABILITIES,
+            replacer::FULL_BACKUP_CAPABILITIES,
+            ['moodle/course:view']
+        ));
         $draftitemid = $this->package_in_draft($user);
         $this->progress('grade', $course, $student, $forum);
 
@@ -388,6 +393,304 @@ final class replace_course_test extends \advanced_testcase {
         $file = $fs->get_file($context->id, 'backup', 'course', 0, '/', $status['backupfilename']);
         $restored = $this->restore_as_new_course($file, $category->id);
         $this->assertSame(['Forum antigo', 'Velha'], $this->activity_names($restored));
+    }
+
+    /**
+     * Opens a backup file and returns what is in it that tells about people.
+     *
+     * @param \stored_file $file
+     * @return array ['dir' => the extracted directory, 'xml' => all the XML put together]
+     */
+    protected function open_copy(\stored_file $file): array {
+        $dir = make_request_directory();
+        get_file_packer('application/vnd.moodle.backup')->extract_to_pathname($file, $dir);
+        $xml = '';
+        foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS)) as $f) {
+            if (substr($f->getFilename(), -4) === '.xml') {
+                $xml .= file_get_contents($f->getPathname());
+            }
+        }
+        return ['dir' => $dir, 'xml' => $xml];
+    }
+
+    /**
+     * Replaces the course as the user (queue and run), returning the status.
+     *
+     * @param \stdClass $user
+     * @param \stdClass $course
+     * @param bool $forcediscard
+     * @param int $keepdays
+     * @return array
+     */
+    protected function replace_as(\stdClass $user, \stdClass $course, bool $forcediscard, int $keepdays = 180): array {
+        $draftitemid = $this->package_in_draft($user);
+        $this->setUser($user);
+        $queued = replace_course::execute($course->id, $draftitemid, '', '', '', 0, $forcediscard, $keepdays);
+        $this->run_queued($user);
+        return base::clean_returnvalue(get_restore_status::execute_returns(), get_restore_status::execute($queued['restoreid']));
+    }
+
+    /**
+     * A user who can do everything the key of the MiwLab can in the course, userinfo included, as the role of 1.9.0.
+     *
+     * @param \core_course_category $category
+     * @return \stdClass
+     */
+    protected function key_user(\core_course_category $category): \stdClass {
+        return $this->user_in_category($category, array_merge(
+            replacer::CAPABILITIES,
+            replacer::FULL_BACKUP_CAPABILITIES,
+            ['moodle/course:view']
+        ));
+    }
+
+    public function test_the_copy_before_replacing_without_discard_carries_no_person_even_with_the_permission(): void {
+        // Issue 204, criterion 1: the role may back up user data and the site default is to include users; the copy must still be
+        // without people, because the plugin sets it explicitly. Without the explicit setting this test fails (mutant).
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        set_config('backup_general_users', 1, 'backup');
+        set_config('backup_general_users_locked', 0, 'backup');
+        $category = $this->getDataGenerator()->create_category();
+        [$course, $student] = $this->old_course($category);
+        $user = $this->key_user($category);
+        $this->assertTrue(has_capability('moodle/backup:userinfo', \context_course::instance($course->id), $user));
+
+        $status = $this->replace_as($user, $course, false);
+        $this->assertSame('finished', $status['status'], $status['errormessage']);
+        $this->assertFalse($status['backuphaspeople']);
+        $this->assertSame(0, $status['backupexpires']);
+        $this->assertStringEndsWith('-nu.mbz', $status['backupfilename']);
+        $contextid = \context_course::instance($course->id)->id;
+        $file = get_file_storage()->get_file($contextid, 'backup', 'course', 0, '/', $status['backupfilename']);
+        $copy = $this->open_copy($file);
+        $this->assertFileDoesNotExist($copy['dir'] . '/users.xml');
+        $this->assertStringNotContainsString($student->username, $copy['xml']);
+        $this->assertStringNotContainsString($student->email, $copy['xml']);
+        $this->assertMatchesRegularExpression('~<name>users</name>\s*<value>0</value>~', $copy['xml']);
+        $this->assertFalse(\local_miwlab\local\fullcopies::record($course->id, $status['backupfilename']));
+    }
+
+    public function test_the_copy_before_replacing_without_discard_is_refused_when_the_site_locks_users_on(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        set_config('backup_general_users', 1, 'backup');
+        set_config('backup_general_users_locked', 1, 'backup');
+        $category = $this->getDataGenerator()->create_category();
+        [$course] = $this->old_course($category);
+        $before = $this->activity_names($course->id);
+        $user = $this->key_user($category);
+        $status = $this->replace_as($user, $course, false);
+        // The copy would carry people, and without discard it must not: nothing is replaced.
+        $this->assertSame('failed', $status['status']);
+        $this->assertSame('error:backupwithpeople', $status['errorcode']);
+        $this->assertFalse($status['rolledback']);
+        $this->assertSame($before, $this->activity_names($course->id));
+        $this->assertCount(0, get_file_storage()->get_area_files(
+            \context_user::instance($user->id)->id,
+            'user',
+            'backup',
+            false,
+            'id',
+            false
+        ));
+    }
+
+    public function test_discarding_makes_a_full_copy_with_the_people_and_it_restores_them(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $category = $this->getDataGenerator()->create_category();
+        [$course, $student, $forum] = $this->old_course($category);
+        $this->progress('grade', $course, $student, $forum);
+        $this->progress('completion', $course, $student, $forum);
+        $this->progress('post', $course, $student, $forum);
+        $user = $this->key_user($category);
+        $now = time();
+
+        $status = $this->replace_as($user, $course, true, 90);
+        $this->assertSame('finished', $status['status'], $status['errormessage']);
+        $this->assertTrue($status['backuphaspeople']);
+        $this->assertEqualsWithDelta($now + 90 * DAYSECS, $status['backupexpires'], 300);
+        $this->assertMatchesRegularExpression('~-full\.mbz$~', $status['backupfilename']);
+        $context = \context_course::instance($course->id);
+        $file = get_file_storage()->get_file($context->id, 'backup', 'course', 0, '/', $status['backupfilename']);
+        $this->assertNotFalse($file);
+        $record = fullcopies::record($course->id, $status['backupfilename']);
+        $this->assertEquals($status['backupexpires'], $record->timeexpires);
+        $this->assertSame($file->get_contenthash(), $record->contenthash);
+        $copy = $this->open_copy($file);
+        $this->assertFileExists($copy['dir'] . '/users.xml');
+        $this->assertStringContainsString($student->username, $copy['xml']);
+        $this->assertStringContainsString('<finalgrade>7.00000</finalgrade>', $copy['xml']);
+        $this->assertStringContainsString('<completionstate>1</completionstate>', $copy['xml']);
+        $this->assertMatchesRegularExpression('~<name>users</name>\s*<value>1</value>~', $copy['xml']);
+        // The copy of the old copy that the teacher had is still there, and the new content is in.
+        $this->assertTrue(get_file_storage()->file_exists($context->id, 'backup', 'course', 0, '/', 'da-professora.mbz'));
+        $this->assertSame(['Conversa', 'Leitura'], $this->activity_names($course->id));
+        // The progress was discarded by the replacement.
+        $this->assertSame(0, $DB->count_records('course_modules_completion', ['userid' => $student->id, 'completionstate' => 1]));
+        // Restored as a new course, the copy gives the student, the grade and the completion back.
+        $this->setAdminUser();
+        $restored = $this->restore_as_new_course($file, $category->id);
+        $grade = $DB->get_record_sql(
+            "SELECT gg.finalgrade FROM {grade_grades} gg JOIN {grade_items} gi ON gi.id = gg.itemid
+              WHERE gi.courseid = :c AND gi.itemtype = 'manual' AND gg.userid = :u",
+            ['c' => $restored, 'u' => $student->id]
+        );
+        $this->assertNotFalse($grade);
+        $this->assertEquals(7, $grade->finalgrade);
+        $this->assertTrue(is_enrolled(\context_course::instance($restored), $student->id));
+        $completed = $DB->count_records_sql(
+            "SELECT COUNT(1) FROM {course_modules_completion} cmc JOIN {course_modules} cm ON cm.id = cmc.coursemoduleid
+              WHERE cm.course = :c AND cmc.userid = :u AND cmc.completionstate = 1",
+            ['c' => $restored, 'u' => $student->id]
+        );
+        $this->assertSame(1, $completed);
+    }
+
+    public function test_without_the_full_copy_nothing_is_discarded(): void {
+        // Issue 204, criterion 3: the site locks "include users" off, so the full copy cannot be made; the course stays as it was.
+        global $DB;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $category = $this->getDataGenerator()->create_category();
+        [$course, $student, $forum] = $this->old_course($category);
+        $this->progress('grade', $course, $student, $forum);
+        $state = replacer::course_state($course->id);
+        set_config('backup_general_users', 0, 'backup');
+        set_config('backup_general_users_locked', 1, 'backup');
+
+        $status = $this->replace_as($this->key_user($category), $course, true);
+        $this->assertSame('failed', $status['status']);
+        $this->assertSame('error:fullbackupnotallowed', $status['errorcode']);
+        $this->assertStringContainsString('users', $status['errormessage']);
+        $this->assertFalse($status['rolledback']);
+        $this->assertFalse($status['backuphaspeople']);
+        $this->assertSame('', $status['backupfilename']);
+        $this->assertSame($state['signature'], replacer::course_state($course->id)['signature']);
+        $this->assertSame(['Forum antigo', 'Velha'], $this->activity_names($course->id));
+        $grade = $DB->get_field_select('grade_grades', 'finalgrade', 'userid = ? AND finalgrade IS NOT NULL', [$student->id]);
+        $this->assertEquals(7, $grade);
+        $this->assertSame(0, $DB->count_records('local_miwlab_fullcopies'));
+        // Negative control: the same site lets the replacement WITHOUT discard through (users off is what it asks for).
+        $this->setAdminUser();
+        [$other] = $this->old_course($category, '', 'OUTRO');
+        $ok = $this->replace_as($this->key_user($category), $other, false);
+        $this->assertSame('finished', $ok['status'], $ok['errormessage']);
+    }
+
+    public function test_a_full_copy_that_cannot_be_made_for_another_reason_replaces_nothing(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $category = $this->getDataGenerator()->create_category();
+        [$course, $student, $forum] = $this->old_course($category);
+        $this->progress('grade', $course, $student, $forum);
+        replacer::$backuphook = function (): \stored_file {
+            throw new \moodle_exception('error:backupempty', 'local_miwlab');
+        };
+        $status = $this->replace_as($this->key_user($category), $course, true);
+        $this->assertSame('failed', $status['status']);
+        $this->assertSame('error:fullbackupfailed', $status['errorcode']);
+        $this->assertSame(['Forum antigo', 'Velha'], $this->activity_names($course->id));
+    }
+
+    public function test_discarding_needs_the_permission_to_back_up_user_data(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $category = $this->getDataGenerator()->create_category();
+        [$course, $student, $forum] = $this->old_course($category);
+        $this->progress('grade', $course, $student, $forum);
+        $user = $this->user_in_category($category, array_merge(replacer::CAPABILITIES, ['moodle/course:view']));
+        $draftitemid = $this->package_in_draft($user);
+        $this->setUser($user);
+        try {
+            replace_course::execute($course->id, $draftitemid, '', '', '', 0, true);
+            $this->fail('A discard without moodle/backup:userinfo must be refused.');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('error:missingcoursecapabilities', $e->errorcode);
+            $this->assertStringContainsString('moodle/backup:userinfo', $e->getMessage());
+        }
+        $this->assertCount(0, \core\task\manager::get_adhoc_tasks(\local_miwlab\task\restore_course::class));
+        // Negative control: the same account without progress is not asked for it.
+        [$clean] = $this->old_course($category, '', 'LIMPO');
+        $queued = replace_course::execute($clean->id, $this->package_in_draft($user));
+        $this->assertSame('queued', $queued['status']);
+    }
+
+    public function test_the_days_to_keep_the_full_copy_are_30_to_365(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $category = $this->getDataGenerator()->create_category();
+        [$course] = $this->old_course($category);
+        $user = $this->key_user($category);
+        $this->setUser($user);
+        foreach ([0, 29, 366, -1] as $bad) {
+            try {
+                replace_course::execute($course->id, $this->package_in_draft($user), '', '', '', 0, true, $bad);
+                $this->fail("keepdays $bad must be refused");
+            } catch (\moodle_exception $e) {
+                $this->assertSame('error:invalidkeepdays', $e->errorcode);
+            }
+        }
+        $this->assertCount(0, \core\task\manager::get_adhoc_tasks(\local_miwlab\task\restore_course::class));
+        // Negative control: the limits themselves and the default are accepted.
+        foreach ([30, 365] as $good) {
+            $queued = replace_course::execute($course->id, $this->package_in_draft($user), '', '', '', 0, true, $good);
+            $this->assertSame('queued', $queued['status']);
+            $this->run_queued($user);
+        }
+        $default = $this->replace_as($user, $course, true);
+        $this->assertEqualsWithDelta(time() + 180 * DAYSECS, $default['backupexpires'], 300);
+    }
+
+    public function test_the_task_deletes_only_the_full_copies_whose_time_is_over(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $category = $this->getDataGenerator()->create_category();
+        [$course] = $this->old_course($category);
+        $context = \context_course::instance($course->id);
+        $fs = get_file_storage();
+        $make = function (string $name, string $content) use ($fs, $context) {
+            return $fs->create_file_from_string([
+                'contextid' => $context->id, 'component' => 'backup', 'filearea' => 'course', 'itemid' => 0, 'filepath' => '/',
+                'filename' => $name,
+            ], $content);
+        };
+        $now = time();
+        $due = $make('vencida-full.mbz', 'vencida');
+        $future = $make('futura-full.mbz', 'futura');
+        $make('de-outra-pessoa.mbz', 'nao registrada');
+        $swapped = $make('trocada-full.mbz', 'original');
+        fullcopies::register($course->id, $due, $now - 10);
+        fullcopies::register($course->id, $future, $now + 10 * DAYSECS);
+        fullcopies::register($course->id, $swapped, $now - 10);
+        // Somebody replaced that file by another with the same name after it was registered.
+        $swapped->delete();
+        $make('trocada-full.mbz', 'outro conteudo');
+        // A record whose file was already deleted by somebody.
+        $gone = $make('apagada-full.mbz', 'sumiu');
+        fullcopies::register($course->id, $gone, $now - 10);
+        $gone->delete();
+
+        $task = new \local_miwlab\task\cleanup_restores();
+        ob_start();
+        $task->execute();
+        ob_end_clean();
+
+        $exists = fn(string $n) => $fs->file_exists($context->id, 'backup', 'course', 0, '/', $n);
+        $this->assertFalse($exists('vencida-full.mbz'), 'the registered copy whose time is over goes');
+        $this->assertTrue($exists('futura-full.mbz'), 'a copy not yet due stays');
+        $this->assertTrue($exists('de-outra-pessoa.mbz'), 'a file the plugin did not register is never touched');
+        $this->assertTrue($exists('da-professora.mbz'), 'the backups of the teachers stay');
+        $this->assertTrue($exists('trocada-full.mbz'), 'a file with another content than the registered one stays');
+        $registered = array_values($DB->get_fieldset_select('local_miwlab_fullcopies', 'filename', '1=1'));
+        $this->assertSame(['futura-full.mbz'], $registered);
+        // The days are counted from the time given: before the time, nothing goes.
+        $this->assertSame(0, fullcopies::cleanup($now + 9 * DAYSECS));
+        $this->assertSame(1, fullcopies::cleanup($now + 11 * DAYSECS));
+        $this->assertFalse($exists('futura-full.mbz'));
     }
 
     /**
@@ -532,6 +835,43 @@ final class replace_course_test extends \advanced_testcase {
         $context = \context_course::instance($course->id);
         $this->assertTrue(get_file_storage()->file_exists($context->id, 'backup', 'course', 0, '/', $status['backupfilename']));
         $this->assertTrue(get_file_storage()->file_exists($context->id, 'backup', 'course', 0, '/', 'da-professora.mbz'));
+    }
+
+    public function test_a_discard_that_fails_after_deleting_puts_the_content_back_and_keeps_the_full_copy(): void {
+        // Issue 204: the full copy (with the people) is what rolls the content back; it stays in the course backup area,
+        // registered, because it
+        // is the only way back of the progress (the rollback account cannot restore people).
+        global $DB;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $category = $this->getDataGenerator()->create_category();
+        [$course, $student, $forum] = $this->old_course($category);
+        $this->progress('grade', $course, $student, $forum);
+        $user = $this->key_user($category);
+        $draftitemid = $this->package_in_draft($user);
+        $this->break_package($user, $draftitemid);
+
+        $this->setUser($user);
+        $queued = replace_course::execute($course->id, $draftitemid, '', '', '', 0, true, 45);
+        $this->run_queued($user);
+        $status = base::clean_returnvalue(get_restore_status::execute_returns(), get_restore_status::execute($queued['restoreid']));
+        $this->assertSame('failed', $status['status']);
+        $this->assertSame('error:replacefailed', $status['errorcode'], $status['errormessage']);
+        $this->assertTrue($status['rolledback']);
+        $this->assertSame(['Forum antigo', 'Velha'], $this->activity_names($course->id));
+        $context = \context_course::instance($course->id);
+        $this->assertTrue(get_file_storage()->file_exists($context->id, 'backup', 'course', 0, '/', $status['backupfilename']));
+        $this->assertTrue($status['backuphaspeople']);
+        $this->assertEqualsWithDelta(time() + 45 * DAYSECS, $status['backupexpires'], 300);
+        $this->assertNotFalse(fullcopies::record($course->id, $status['backupfilename']));
+        $this->assertCount(0, get_file_storage()->get_area_files(
+            \context_user::instance($user->id)->id,
+            'user',
+            'backup',
+            false,
+            'id',
+            false
+        ));
     }
 
     /**

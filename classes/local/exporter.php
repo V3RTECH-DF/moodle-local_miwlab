@@ -143,11 +143,11 @@ class exporter {
                         $plan->get_setting($name)->set_value($value);
                     }
                 }
-                foreach (['users', 'role_assignments', 'userscompletion', 'logs', 'grade_histories', 'comments'] as $name) {
-                    if ($plan->setting_exists($name) && $plan->get_setting($name)->get_value()) {
-                        throw new moodle_exception('error:backupwithpeople', 'local_miwlab');
-                    }
-                }
+                // 1.9.0: the role has moodle/backup:userinfo, so the copy no longer lacks people just because of the permission:
+                // the people settings are set off explicitly (lifting the lock by permission) and checked after, the root
+                // ones and the
+                // user data of each activity and block.
+                backup_scope::exclude_people($plan);
                 $bc->execute_plan();
                 $result = $bc->get_results()['backup_destination'] ?? null;
             } finally {

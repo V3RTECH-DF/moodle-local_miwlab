@@ -41,7 +41,7 @@ final class get_info_test extends \advanced_testcase {
             [
                 'restore', 'restorestatus', 'findcourses', 'completion', 'feedback', 'moduletypes', 'courseformats', 'replace',
                 'hidecourse', 'coursestate', 'blocks', 'badges', 'contentbackup', 'certificatetemplates', 'uploadlimits',
-                'forumtopics', 'coursesoverview',
+                'forumtopics', 'coursesoverview', 'fullbackup', 'safeupdate',
             ],
             $info['features']
         );

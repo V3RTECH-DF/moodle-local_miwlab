@@ -61,6 +61,12 @@ class replacer {
         'moodle/badges:configurecriteria',
     ];
 
+    /**
+     * Capability needed in the course, besides CAPABILITIES, for the replacement that discards progress (1.9.0, issue 204): the
+     * full backup carries the people. Without it that replacement is refused before anything is touched.
+     */
+    const FULL_BACKUP_CAPABILITIES = ['moodle/backup:userinfo'];
+
     /** Capabilities needed in the course to hide it. */
     const HIDE_CAPABILITIES = ['local/miwlab:hidecourse', 'moodle/course:visibility'];
 
@@ -139,8 +145,23 @@ class replacer {
     }
 
     /**
+     * The activity (course module id) of a module instance, as a SQL expression; 0 when there is none. Used by the progress queries
+     * so that the same queries tell who has progress in the course and in which activity (1.9.0, issue 204).
+     *
+     * @param string $module Module name (assign, quiz...).
+     * @param string $instance SQL expression of the instance id.
+     * @return string
+     */
+    protected static function cm_of(string $module, string $instance): string {
+        return "COALESCE((SELECT cmx.id FROM {course_modules} cmx JOIN {modules} mx ON mx.id = cmx.module
+                           WHERE mx.name = '" . $module . "' AND cmx.instance = " . $instance . "), 0)";
+    }
+
+    /**
      * The queries that list who has progress in a course, each with the tables it needs (a module may be missing or, as the
-     * chat and the survey from Moodle 5.0 on, gone). Each returns a column "userid"; ":courseid" is the course.
+     * chat and the survey from Moodle 5.0 on, gone). Each returns the columns "userid" and "cmid" (1.9.0: the activity where the
+     * progress is; 0 when it belongs to the course as a whole: the course completion, the course total and manual items of the
+     * gradebook, the badges and the competencies of the course, the notes); ":courseid" is the course.
      *
      * Progress is anything that deleting the content would destroy about a person: an activity completed, the course
      * completed, any grade (of any grade item, the course total included), a submission, a quiz or lesson attempt, an answer
@@ -152,86 +173,116 @@ class replacer {
      */
     protected static function progress_queries(): array {
         return [
-            [['course_modules_completion'], "SELECT cmc.userid FROM {course_modules_completion} cmc
+            [['course_modules_completion'], "SELECT cmc.userid, cmc.coursemoduleid AS cmid FROM {course_modules_completion} cmc
                 JOIN {course_modules} cm ON cm.id = cmc.coursemoduleid WHERE cm.course = :courseid AND cmc.completionstate > 0"],
-            [['course_completions'], "SELECT userid FROM {course_completions}
+            [['course_completions'], "SELECT userid, 0 AS cmid FROM {course_completions}
                 WHERE course = :courseid AND (timecompleted IS NOT NULL OR reaggregate > 0)"],
-            [['course_completion_crit_compl'], "SELECT userid FROM {course_completion_crit_compl} WHERE course = :courseid"],
-            // Any grade of any grade item of the course (activities, manual items, categories and the course total).
-            [['grade_grades'], "SELECT gg.userid FROM {grade_grades} gg JOIN {grade_items} gi ON gi.id = gg.itemid
+            [['course_completion_crit_compl'],
+                "SELECT userid, 0 AS cmid FROM {course_completion_crit_compl} WHERE course = :courseid"],
+            // Any grade of any grade item of the course (activities, manual items, categories and the course total). The grade
+            // of an
+            // activity belongs to it; the others to the course.
+            [['grade_grades'],
+                "SELECT gg.userid, CASE WHEN gi.itemtype = 'mod' THEN COALESCE((SELECT cmx.id FROM {course_modules} cmx
+                JOIN {modules} mx ON mx.id = cmx.module WHERE mx.name = gi.itemmodule AND cmx.instance = gi.iteminstance), 0)
+                ELSE 0 END AS cmid
+                FROM {grade_grades} gg JOIN {grade_items} gi ON gi.id = gg.itemid
                 WHERE gi.courseid = :courseid AND (gg.finalgrade IS NOT NULL OR gg.rawgrade IS NOT NULL OR gg.overridden > 0)"],
-            [['badge_issued', 'badge'], "SELECT bi.userid FROM {badge_issued} bi JOIN {badge} b ON b.id = bi.badgeid
+            [['badge_issued', 'badge'], "SELECT bi.userid, 0 AS cmid FROM {badge_issued} bi JOIN {badge} b ON b.id = bi.badgeid
                 WHERE b.courseid = :courseid"],
-            [['competency_usercompcourse'], "SELECT userid FROM {competency_usercompcourse}
+            [['competency_usercompcourse'], "SELECT userid, 0 AS cmid FROM {competency_usercompcourse}
                 WHERE courseid = :courseid AND (grade IS NOT NULL OR proficiency IS NOT NULL)"],
-            [['competency_evidence', 'competency_usercomp'], "SELECT uc.userid FROM {competency_evidence} e
+            [['competency_evidence', 'competency_usercomp'], "SELECT uc.userid,
+                    CASE WHEN ctx.contextlevel = " . CONTEXT_MODULE . " THEN ctx.instanceid ELSE 0 END AS cmid
+                FROM {competency_evidence} e
                 JOIN {competency_usercomp} uc ON uc.id = e.usercompetencyid JOIN {context} ctx ON ctx.id = e.contextid
                 WHERE (ctx.contextlevel = " . CONTEXT_COURSE . " AND ctx.instanceid = :courseid)
                    OR (ctx.contextlevel = " . CONTEXT_MODULE . " AND ctx.instanceid IN
                        (SELECT cmx.id FROM {course_modules} cmx WHERE cmx.course = :courseid2))"],
-            [['workshop_assessments', 'workshop_submissions'], "SELECT wa.reviewerid AS userid FROM {workshop_assessments} wa
+            [['workshop_assessments', 'workshop_submissions'], "SELECT wa.reviewerid AS userid, " . self::cm_of(
+                'workshop',
+                'w.id'
+            ) . " AS cmid
+                FROM {workshop_assessments} wa
                 JOIN {workshop_submissions} ws ON ws.id = wa.submissionid JOIN {workshop} w ON w.id = ws.workshopid
                 WHERE w.course = :courseid AND ws.example = 0"],
-            [['lti_submission'], "SELECT ls.userid FROM {lti_submission} ls JOIN {lti} l ON l.id = ls.ltiid
-                WHERE l.course = :courseid"],
-            [['bigbluebuttonbn_logs'], "SELECT userid FROM {bigbluebuttonbn_logs}
-                WHERE courseid = :courseid AND log IN ('Join', 'Played')"],
-            [['hvp_xapi_results', 'hvp'], "SELECT x.user_id AS userid FROM {hvp_xapi_results} x
+            [['lti_submission'], "SELECT ls.userid, " . self::cm_of('lti', 'l.id') . " AS cmid FROM {lti_submission} ls
+                JOIN {lti} l ON l.id = ls.ltiid WHERE l.course = :courseid"],
+            [['bigbluebuttonbn_logs'], "SELECT bl.userid, " . self::cm_of('bigbluebuttonbn', 'bl.bigbluebuttonbnid') . " AS cmid
+                FROM {bigbluebuttonbn_logs} bl WHERE bl.courseid = :courseid AND bl.log IN ('Join', 'Played')"],
+            [['hvp_xapi_results', 'hvp'], "SELECT x.user_id AS userid, " . self::cm_of(
+                'hvp',
+                'h.id'
+            ) . " AS cmid FROM {hvp_xapi_results} x
                 JOIN {hvp} h ON h.id = x.content_id WHERE h.course = :courseid"],
-            [['hvp_content_user_data', 'hvp'], "SELECT d.user_id AS userid FROM {hvp_content_user_data} d
-                JOIN {hvp} h ON h.id = d.hvp_id WHERE h.course = :courseid"],
-            [['attendance_log', 'attendance_sessions'], "SELECT al.studentid AS userid FROM {attendance_log} al
+            [['hvp_content_user_data', 'hvp'], "SELECT d.user_id AS userid, " . self::cm_of('hvp', 'h.id') . " AS cmid
+                FROM {hvp_content_user_data} d JOIN {hvp} h ON h.id = d.hvp_id WHERE h.course = :courseid"],
+            [['attendance_log', 'attendance_sessions'], "SELECT al.studentid AS userid, " . self::cm_of(
+                'attendance',
+                'a.id'
+            ) . " AS cmid
+                FROM {attendance_log} al
                 JOIN {attendance_sessions} ats ON ats.id = al.sessionid JOIN {attendance} a ON a.id = ats.attendanceid
                 WHERE a.course = :courseid"],
-            [['assign_submission'], "SELECT s.userid FROM {assign_submission} s JOIN {assign} a ON a.id = s.assignment
+            [['assign_submission'], "SELECT s.userid, " . self::cm_of('assign', 'a.id') . " AS cmid FROM {assign_submission} s
+                JOIN {assign} a ON a.id = s.assignment
                 WHERE a.course = :courseid AND s.userid > 0 AND s.status <> 'new'"],
             // A submission of a group (team submission) is kept without a person (userid 0): progress of each member of the group,
             // and, when the group has no member any more or it is the default group (people in no group), progress all the same:
             // one per submission, with a number that is never a person (fail closed).
-            [['assign_submission', 'groups_members'], "SELECT gm.userid FROM {assign_submission} s
+            [['assign_submission', 'groups_members'], "SELECT gm.userid, " . self::cm_of('assign', 'a.id') . " AS cmid
+                FROM {assign_submission} s
                 JOIN {assign} a ON a.id = s.assignment JOIN {groups_members} gm ON gm.groupid = s.groupid
                 WHERE a.course = :courseid AND s.userid = 0 AND s.groupid > 0 AND s.status <> 'new'"],
-            [['assign_submission', 'groups_members'], "SELECT -s.id AS userid FROM {assign_submission} s
+            [['assign_submission', 'groups_members'], "SELECT -s.id AS userid, " . self::cm_of('assign', 'a.id') . " AS cmid
+                FROM {assign_submission} s
                 JOIN {assign} a ON a.id = s.assignment
                 WHERE a.course = :courseid AND s.userid = 0 AND s.status <> 'new'
                   AND NOT EXISTS (SELECT 1 FROM {groups_members} gm WHERE gm.groupid = s.groupid AND s.groupid > 0)"],
             // A grade given in the assignment and not released to the gradebook yet (marking workflow) is not in grade_grades.
-            [['assign_grades'], "SELECT ag.userid FROM {assign_grades} ag JOIN {assign} a ON a.id = ag.assignment
+            [['assign_grades'], "SELECT ag.userid, " . self::cm_of('assign', 'a.id') . " AS cmid FROM {assign_grades} ag
+                JOIN {assign} a ON a.id = ag.assignment
                 WHERE a.course = :courseid AND ag.grade >= 0"],
-            [['quiz_attempts'], "SELECT qa.userid FROM {quiz_attempts} qa JOIN {quiz} q ON q.id = qa.quiz
-                WHERE q.course = :courseid AND qa.preview = 0"],
-            [['forum_posts'], "SELECT p.userid FROM {forum_posts} p JOIN {forum_discussions} d ON d.id = p.discussion
+            [['quiz_attempts'], "SELECT qa.userid, " . self::cm_of('quiz', 'q.id') . " AS cmid FROM {quiz_attempts} qa
+                JOIN {quiz} q ON q.id = qa.quiz WHERE q.course = :courseid AND qa.preview = 0"],
+            [['forum_posts'], "SELECT p.userid, " . self::cm_of('forum', 'd.forum') . " AS cmid FROM {forum_posts} p
+                JOIN {forum_discussions} d ON d.id = p.discussion
                 WHERE d.course = :courseid AND p.userid <> :miwlabuser"],
-            [['feedback_completed'], "SELECT fc.userid FROM {feedback_completed} fc JOIN {feedback} f ON f.id = fc.feedback
-                WHERE f.course = :courseid"],
-            [['choice_answers'], "SELECT ca.userid FROM {choice_answers} ca JOIN {choice} c ON c.id = ca.choiceid
-                WHERE c.course = :courseid"],
-            [['lesson_attempts'], "SELECT la.userid FROM {lesson_attempts} la JOIN {lesson} l ON l.id = la.lessonid
-                WHERE l.course = :courseid"],
-            [['lesson_grades'], "SELECT lg.userid FROM {lesson_grades} lg JOIN {lesson} l ON l.id = lg.lessonid
-                WHERE l.course = :courseid"],
-            [['h5pactivity_attempts'], "SELECT ha.userid FROM {h5pactivity_attempts} ha
+            [['feedback_completed'], "SELECT fc.userid, " . self::cm_of('feedback', 'f.id') . " AS cmid FROM {feedback_completed} fc
+                JOIN {feedback} f ON f.id = fc.feedback WHERE f.course = :courseid"],
+            [['choice_answers'], "SELECT ca.userid, " . self::cm_of('choice', 'c.id') . " AS cmid FROM {choice_answers} ca
+                JOIN {choice} c ON c.id = ca.choiceid WHERE c.course = :courseid"],
+            [['lesson_attempts'], "SELECT la.userid, " . self::cm_of('lesson', 'l.id') . " AS cmid FROM {lesson_attempts} la
+                JOIN {lesson} l ON l.id = la.lessonid WHERE l.course = :courseid"],
+            [['lesson_grades'], "SELECT lg.userid, " . self::cm_of('lesson', 'l.id') . " AS cmid FROM {lesson_grades} lg
+                JOIN {lesson} l ON l.id = lg.lessonid WHERE l.course = :courseid"],
+            [['h5pactivity_attempts'], "SELECT ha.userid, " . self::cm_of('h5pactivity', 'h.id') . " AS cmid
+                FROM {h5pactivity_attempts} ha
                 JOIN {h5pactivity} h ON h.id = ha.h5pactivityid WHERE h.course = :courseid"],
-            [['scorm_attempt'], "SELECT sa.userid FROM {scorm_attempt} sa JOIN {scorm} s ON s.id = sa.scormid
-                WHERE s.course = :courseid"],
-            [['scorm_scoes_track'], "SELECT st.userid FROM {scorm_scoes_track} st JOIN {scorm} s ON s.id = st.scormid
-                WHERE s.course = :courseid"],
-            [['data_records'], "SELECT r.userid FROM {data_records} r JOIN {data} d ON d.id = r.dataid WHERE d.course = :courseid"],
-            [['glossary_entries'], "SELECT e.userid FROM {glossary_entries} e JOIN {glossary} g ON g.id = e.glossaryid
-                WHERE g.course = :courseid"],
-            [['wiki_pages', 'wiki_subwikis'], "SELECT p.userid FROM {wiki_pages} p JOIN {wiki_subwikis} sw ON sw.id = p.subwikiid
+            [['scorm_attempt'], "SELECT sa.userid, " . self::cm_of('scorm', 's.id') . " AS cmid FROM {scorm_attempt} sa
+                JOIN {scorm} s ON s.id = sa.scormid WHERE s.course = :courseid"],
+            [['scorm_scoes_track'], "SELECT st.userid, " . self::cm_of('scorm', 's.id') . " AS cmid FROM {scorm_scoes_track} st
+                JOIN {scorm} s ON s.id = st.scormid WHERE s.course = :courseid"],
+            [['data_records'], "SELECT r.userid, " . self::cm_of('data', 'd.id') . " AS cmid FROM {data_records} r
+                JOIN {data} d ON d.id = r.dataid WHERE d.course = :courseid"],
+            [['glossary_entries'], "SELECT e.userid, " . self::cm_of('glossary', 'g.id') . " AS cmid FROM {glossary_entries} e
+                JOIN {glossary} g ON g.id = e.glossaryid WHERE g.course = :courseid"],
+            [['wiki_pages', 'wiki_subwikis'], "SELECT p.userid, " . self::cm_of('wiki', 'w.id') . " AS cmid FROM {wiki_pages} p
+                JOIN {wiki_subwikis} sw ON sw.id = p.subwikiid
                 JOIN {wiki} w ON w.id = sw.wikiid WHERE w.course = :courseid"],
-            [['workshop_submissions'], "SELECT ws.authorid AS userid FROM {workshop_submissions} ws
+            [['workshop_submissions'], "SELECT ws.authorid AS userid, " . self::cm_of('workshop', 'w.id') . " AS cmid
+                FROM {workshop_submissions} ws
                 JOIN {workshop} w ON w.id = ws.workshopid WHERE w.course = :courseid AND ws.example = 0"],
-            [['survey_answers'], "SELECT sa.userid FROM {survey_answers} sa JOIN {survey} s ON s.id = sa.survey
-                WHERE s.course = :courseid"],
-            [['chat_messages'], "SELECT m.userid FROM {chat_messages} m JOIN {chat} c ON c.id = m.chatid
-                WHERE c.course = :courseid AND m.issystem = 0"],
-            [['customcert_issues'], "SELECT ci.userid FROM {customcert_issues} ci JOIN {customcert} c ON c.id = ci.customcertid
-                WHERE c.course = :courseid"],
-            [['questionnaire_response', 'questionnaire'], "SELECT r.userid FROM {questionnaire_response} r
+            [['survey_answers'], "SELECT sa.userid, " . self::cm_of('survey', 's.id') . " AS cmid FROM {survey_answers} sa
+                JOIN {survey} s ON s.id = sa.survey WHERE s.course = :courseid"],
+            [['chat_messages'], "SELECT m.userid, " . self::cm_of('chat', 'c.id') . " AS cmid FROM {chat_messages} m
+                JOIN {chat} c ON c.id = m.chatid WHERE c.course = :courseid AND m.issystem = 0"],
+            [['customcert_issues'], "SELECT ci.userid, " . self::cm_of('customcert', 'c.id') . " AS cmid FROM {customcert_issues} ci
+                JOIN {customcert} c ON c.id = ci.customcertid WHERE c.course = :courseid"],
+            [['questionnaire_response', 'questionnaire'], "SELECT r.userid, " . self::cm_of('questionnaire', 'q.id') . " AS cmid
+                FROM {questionnaire_response} r
                 JOIN {questionnaire} q ON q.id = r.questionnaireid WHERE q.course = :courseid"],
-            [['post'], "SELECT userid FROM {post} WHERE module = 'notes' AND courseid = :courseid"],
+            [['post'], "SELECT userid, 0 AS cmid FROM {post} WHERE module = 'notes' AND courseid = :courseid"],
         ];
     }
 
@@ -328,6 +379,58 @@ class replacer {
             );
         }
         return ['enrolled' => $enrolled, 'withprogress' => $withprogress];
+    }
+
+    /**
+     * Who has progress, activity by activity (1.9.0, issue 204): the same queries as people(), with the activity of each row. The
+     * people are the same as the ones people() counts (the MiwLab account never counts); a row that belongs to the course as a
+     * whole
+     * (the course completion, the course total and manual items of the gradebook, the badges, the notes) is listed apart.
+     * Counts only, by design of the callers: no person is ever named outside this class.
+     *
+     * @param int $courseid
+     * @return array ['activities' => [cmid => int[] userids], 'course' => int[] userids]
+     */
+    public static function progress_by_activity(int $courseid): array {
+        global $DB, $USER;
+        $dbman = $DB->get_manager();
+        $account = (int) get_config('local_miwlab', 'accountid');
+        $activities = [];
+        $course = [];
+        foreach (self::progress_queries() as $i => [$tables, $sql]) {
+            foreach ($tables as $table) {
+                if (!$dbman->table_exists($table)) {
+                    continue 2;
+                }
+            }
+            $params = [];
+            $query = preg_replace_callback('/:courseid(\d*)/', function (array $m) use ($i, $courseid, &$params): string {
+                $name = 'c' . $i . 'x' . $m[1];
+                $params[$name] = $courseid;
+                return ':' . $name;
+            }, $sql);
+            if (strpos($query, ':miwlabuser') !== false) {
+                $params['miwlabuser'] = (int) $USER->id;
+            }
+            $rows = $DB->get_recordset_sql($query, $params);
+            foreach ($rows as $row) {
+                $userid = (int) $row->userid;
+                if ($account > 0 && $userid === $account) {
+                    continue;
+                }
+                $cmid = (int) $row->cmid;
+                if ($cmid > 0) {
+                    $activities[$cmid][$userid] = true;
+                } else {
+                    $course[$userid] = true;
+                }
+            }
+            $rows->close();
+        }
+        return [
+            'activities' => array_map(fn(array $users): array => array_keys($users), $activities),
+            'course' => array_keys($course),
+        ];
     }
 
     /**
@@ -447,8 +550,8 @@ class replacer {
         global $DB;
         return $DB->record_exists_select(
             'local_miwlab_restores',
-            'mode = :mode AND courseid = :courseid AND status IN (:queued, :running)',
-            ['mode' => self::MODE, 'courseid' => $courseid, 'queued' => restorer::STATUS_QUEUED,
+            'mode IN (:mode, :update) AND courseid = :courseid AND status IN (:queued, :running)',
+            ['mode' => self::MODE, 'update' => updater::MODE, 'courseid' => $courseid, 'queued' => restorer::STATUS_QUEUED,
                 'running' => restorer::STATUS_RUNNING]
         );
     }
@@ -464,6 +567,7 @@ class replacer {
      * @param string $expectedsignature The state the MiwLab knows (course_state()), checked again before replacing; '' none.
      * @param int $unchangedsince Without the signature: the course must not have been edited after this time; 0 none.
      * @param bool $forcediscard Whether to replace discarding existing progress.
+     * @param int $keepdays Days the full backup made before a discard is kept (fullcopies::MIN_DAYS to MAX_DAYS).
      * @return stdClass The record of the restore.
      */
     public static function queue(
@@ -472,9 +576,11 @@ class replacer {
         string $marker,
         string $expectedsignature = '',
         int $unchangedsince = 0,
-        bool $forcediscard = false
+        bool $forcediscard = false,
+        int $keepdays = fullcopies::DEFAULT_DAYS
     ): stdClass {
         global $CFG, $DB, $USER;
+        fullcopies::require_valid_days($keepdays);
         require_once($CFG->dirroot . '/backup/util/includes/restore_includes.php');
         $record = (object) [
             'restoreid' => restore_controller::get_tempdir_name($course->id, $USER->id),
@@ -485,6 +591,7 @@ class replacer {
             'expectedsignature' => $expectedsignature === '' ? null : $expectedsignature,
             'unchangedsince' => max(0, $unchangedsince),
             'forcediscard' => $forcediscard ? 1 : 0,
+            'keepdays' => $keepdays,
             'status' => restorer::STATUS_QUEUED,
             'progress' => 0,
             'timecreated' => time(),
@@ -522,12 +629,18 @@ class replacer {
         $identity = null;
         $access = null;
         $backupname = '';
+        $backupexpires = 0;
         $keptopics = '';
         try {
             $course = self::course((int) $record->courseid);
             $context = \context_course::instance($course->id);
             // The capabilities and the progress are checked again: they may have changed while the replacement waited.
             self::require_capabilities($context, $course);
+            // 1.9.0 (issue 204): discarding progress is done with a full backup, with the people; no permission for it, no discard.
+            $full = !empty($record->forcediscard);
+            if ($full) {
+                self::require_capabilities($context, $course, self::FULL_BACKUP_CAPABILITIES);
+            }
             if (empty($record->forcediscard)) {
                 self::require_no_progress($course->id);
             }
@@ -546,8 +659,11 @@ class replacer {
             }
 
             // 1. The backup of the course as it is: without it, nothing is replaced.
-            $backup = self::backup($course->id);
-            $backupname = self::backup_name($course);
+            // With a discard the copy is the full one (with the people), the only way back; otherwise it is made without people.
+            $backup = self::backup($course->id, $full);
+            $backupname = self::backup_name($course, $full);
+            $backupexpires = $full ? time() + fullcopies::require_valid_days((int) ($record->keepdays ?? fullcopies::DEFAULT_DAYS))
+                * DAYSECS : 0;
             $DB->set_field('local_miwlab_restores', 'backupfilename', $backupname, ['id' => $record->id]);
             // Somebody may have made progress while the backup ran.
             if (empty($record->forcediscard)) {
@@ -591,11 +707,13 @@ class replacer {
                 ? ['created' => 0, 'skipped' => 1, 'existing' => 0, 'note' => $keepfailure]
                 : forum_topics::create_from_package((int) $course->id, $keptopics);
             $marker = self::write_marker($course->id, $marker);
-            self::keep_backup($context, $backupname, $backup);
+            self::keep_backup($context, $backupname, $backup, $backupexpires);
             $backup = null;
             self::restore_backups($context, $identity);
             $DB->update_record('local_miwlab_restores', (object) [
                 'id' => $record->id,
+                'fullbackup' => $backupexpires > 0 ? 1 : 0,
+                'backupexpires' => $backupexpires,
                 'status' => restorer::STATUS_FINISHED,
                 'progress' => 1,
                 'timefinished' => time(),
@@ -628,7 +746,9 @@ class replacer {
             // The backup is kept in the course backup area only when the course was touched; otherwise nothing changed.
             try {
                 if ($backup && $touched && $context) {
-                    self::keep_backup($context, $backupname, $backup);
+                    self::keep_backup($context, $backupname, $backup, $backupexpires);
+                    $DB->update_record('local_miwlab_restores', (object) ['id' => $record->id,
+                        'fullbackup' => $backupexpires > 0 ? 1 : 0, 'backupexpires' => $backupexpires]);
                 } else if ($backup) {
                     $backup->delete();
                     $DB->set_field('local_miwlab_restores', 'backupfilename', null, ['id' => $record->id]);
@@ -659,14 +779,19 @@ class replacer {
     }
 
     /**
-     * The backup of the course, without user data, as the current user. Moodle stores a backup without users in the user
-     * backup area of whoever made it; keep_backup() moves it to the course backup area once the replacement ends.
+     * The backup of the course as the current user. Moodle stores it in the user backup area of whoever made it; keep_backup()
+     * moves it to the course backup area once the replacement ends.
+     *
+     * Without people (the default) the settings that carry them are set off explicitly and checked after setting (1.9.0: the
+     * role has moodle/backup:userinfo, so the permission no longer keeps them out). With people ($full, only for the replacement
+     * that discards progress) they are set on, and checked.
      *
      * @param int $courseid
+     * @param bool $full With the people.
      * @return \stored_file
-     * @throws moodle_exception error:backupfailed, with the reason
+     * @throws moodle_exception error:backupwithpeople, error:fullbackupnotallowed, error:fullbackupfailed or error:backupfailed
      */
-    protected static function backup(int $courseid): \stored_file {
+    public static function backup(int $courseid, bool $full = false): \stored_file {
         global $CFG, $USER;
         require_once($CFG->libdir . '/filelib.php');
         require_once($CFG->dirroot . '/backup/util/includes/backup_includes.php');
@@ -683,6 +808,16 @@ class replacer {
                     (int) $USER->id
                 );
                 try {
+                    if ($full) {
+                        backup_scope::include_people($bc->get_plan(), \context_course::instance($courseid));
+                        // Moodle stores a backup WITH people straight in the course backup area, where deleting the content
+                        // takes it
+                        // away: a name of its own keeps it from touching a backup a teacher left there, and it is moved
+                        // aside below.
+                        $bc->get_plan()->get_setting('filename')->set_value('miwlab-full-' . bin2hex(random_bytes(6)) . '.mbz');
+                    } else {
+                        backup_scope::exclude_people($bc->get_plan());
+                    }
                     $bc->execute_plan();
                     $file = $bc->get_results()['backup_destination'] ?? null;
                 } finally {
@@ -692,10 +827,42 @@ class replacer {
             if (!$file instanceof \stored_file || $file->get_filesize() <= 0) {
                 throw new moodle_exception('error:backupempty', 'local_miwlab');
             }
-            return $file;
+            return $full ? self::move_to_private_area($file) : $file;
+        } catch (moodle_exception $e) {
+            if (in_array($e->errorcode, ['error:backupwithpeople', 'error:fullbackupnotallowed'], true)) {
+                throw $e;
+            }
+            $code = $full ? 'error:fullbackupfailed' : 'error:backupfailed';
+            throw new moodle_exception($code, 'local_miwlab', '', restorer::reason($e));
         } catch (\Throwable $e) {
-            throw new moodle_exception('error:backupfailed', 'local_miwlab', '', restorer::reason($e));
+            $code = $full ? 'error:fullbackupfailed' : 'error:backupfailed';
+            throw new moodle_exception($code, 'local_miwlab', '', restorer::reason($e));
         }
+    }
+
+    /**
+     * Moves a backup that Moodle stored in the course backup area (the ones with people) to the private backup area of the account,
+     * where the backup without people already is: deleting the content of the course would delete it from the course area.
+     * keep_backup() puts it back, with the name the plugin gives, once the replacement ends.
+     *
+     * @param \stored_file $file
+     * @return \stored_file The file in the private area of the account.
+     */
+    protected static function move_to_private_area(\stored_file $file): \stored_file {
+        global $USER;
+        if ($file->get_component() === 'user' && $file->get_filearea() === 'backup') {
+            return $file;
+        }
+        $moved = get_file_storage()->create_file_from_storedfile([
+            'contextid' => \context_user::instance($USER->id)->id,
+            'component' => 'user',
+            'filearea' => 'backup',
+            'itemid' => 0,
+            'filepath' => '/',
+            'filename' => 'miwlab-full-' . bin2hex(random_bytes(6)) . '.mbz',
+        ], $file);
+        $file->delete();
+        return $moved;
     }
 
     /**
@@ -714,13 +881,14 @@ class replacer {
     }
 
     /**
-     * The name the backup gets in the course backup area.
+     * The name the backup gets in the course backup area: "-nu" (no users) or, 1.9.0, "-full" (with the people).
      *
      * @param stdClass $course
+     * @param bool $full
      * @return string
      */
-    public static function backup_name(stdClass $course): string {
-        return 'miwlab-before-replace-course-' . $course->id . '-' . date('Ymd-Hi') . '-nu.mbz';
+    public static function backup_name(stdClass $course, bool $full = false): string {
+        return 'miwlab-before-replace-course-' . $course->id . '-' . date('Ymd-Hi') . ($full ? '-full' : '-nu') . '.mbz';
     }
 
     /**
@@ -917,14 +1085,16 @@ class replacer {
      * @param \context_course $context
      * @param string $name The name it gets there (backup_name()).
      * @param \stored_file $backup
+     * @param int $expires For a full backup (1.9.0): when it is deleted (Unix time), and it is registered; 0: a copy without
+     * people.
      */
-    protected static function keep_backup(\context_course $context, string $name, \stored_file $backup): void {
+    public static function keep_backup(\context_course $context, string $name, \stored_file $backup, int $expires = 0): void {
         $fs = get_file_storage();
         $existing = $fs->get_file($context->id, 'backup', 'course', 0, '/', $name);
         if ($existing) {
             $existing->delete();
         }
-        $fs->create_file_from_storedfile([
+        $kept = $fs->create_file_from_storedfile([
             'contextid' => $context->id,
             'component' => 'backup',
             'filearea' => 'course',
@@ -932,6 +1102,9 @@ class replacer {
             'filepath' => '/',
             'filename' => $name,
         ], $backup);
+        if ($expires > 0) {
+            fullcopies::register((int) $context->instanceid, $kept, $expires);
+        }
         $backup->delete();
     }
 

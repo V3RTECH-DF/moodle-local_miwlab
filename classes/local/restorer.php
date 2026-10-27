@@ -204,6 +204,11 @@ class restorer {
         if (!$indraft || (int) $file->get_contextid() !== $usercontextid) {
             $file = false;
         }
+        if (($record->mode ?? self::MODE_NEW) === updater::MODE) {
+            // The safe update of a course (1.9.0): it has its own package, kept in the course, and no draft file.
+            update_runner::run($record);
+            return;
+        }
         $tempdir = make_backup_temp_directory($record->restoreid);
         if (($record->mode ?? self::MODE_NEW) === replacer::MODE) {
             try {
@@ -484,7 +489,11 @@ class restorer {
             'timecreated' => (int) $record->timecreated,
             'timestarted' => (int) $record->timestarted,
             'timefinished' => (int) $record->timefinished,
-            'mode' => ($record->mode ?? self::MODE_NEW) === replacer::MODE ? replacer::MODE : self::MODE_NEW,
+            'mode' => in_array(
+                ($record->mode ?? self::MODE_NEW),
+                [replacer::MODE, updater::MODE],
+                true
+            ) ? $record->mode : self::MODE_NEW,
             'backupfilename' => (string) ($record->backupfilename ?? ''),
             'rolledback' => !empty($record->rolledback),
             'coursesignature' => '',
@@ -492,6 +501,9 @@ class restorer {
             'topicscreated' => (int) ($record->topicscreated ?? 0),
             'topicsskipped' => (int) ($record->topicsskipped ?? 0),
             'topicsnote' => (string) ($record->topicsnote ?? ''),
+            'backuphaspeople' => !empty($record->fullbackup),
+            'backupexpires' => (int) ($record->backupexpires ?? 0),
+            'updateresult' => (string) ($record->updateresult ?? ''),
         ];
         if ($status === self::STATUS_FINISHED) {
             $course = $DB->get_record('course', ['id' => $record->courseid]);

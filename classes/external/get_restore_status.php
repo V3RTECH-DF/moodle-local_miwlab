@@ -59,6 +59,13 @@ class get_restore_status extends base {
             require_capability('local/miwlab:replacecourse', \context_course::instance($course->id));
             return restorer::export($record);
         }
+        if (($record->mode ?? restorer::MODE_NEW) === \local_miwlab\local\updater::MODE) {
+            // A safe update (1.9.0) is followed by whoever can update that course.
+            $course = replacer::course((int) $record->courseid);
+            self::validate_category_context((int) $course->category);
+            require_capability('local/miwlab:updatecourse', \context_course::instance($course->id));
+            return restorer::export($record);
+        }
         $context = \context_coursecat::instance($record->categoryid, IGNORE_MISSING);
         if (!$context) {
             throw new \moodle_exception('error:categorynotfound', 'local_miwlab');
@@ -91,7 +98,8 @@ class get_restore_status extends base {
             'timefinished' => new external_value(PARAM_INT, 'When it ended; 0 before'),
             'mode' => new external_value(
                 PARAM_ALPHA,
-                'new: a new course in the category; replace: the content of a course replaced'
+                'new: a new course in the category; replace: the content of a course replaced; '
+                    . 'update: a course updated in place (1.9.0)'
             ),
             'backupfilename' => new external_value(
                 PARAM_FILE,
@@ -112,6 +120,18 @@ class get_restore_status extends base {
             ),
             'topicsskipped' => new external_value(PARAM_INT, 'When finished: the forum topics that could not be created'),
             'topicsnote' => new external_value(PARAM_RAW, 'When finished: the first reason a topic was not created'),
+            'backuphaspeople' => new external_value(
+                PARAM_BOOL,
+                'Mode replace: the backup in backupfilename is the full one (with the people, made before a discard)'
+            ),
+            'backupexpires' => new external_value(
+                PARAM_INT,
+                'Mode replace, full backup: when the plugin deletes it (Unix time); 0 otherwise'
+            ),
+            'updateresult' => new external_value(
+                PARAM_RAW,
+                'Mode update, ended: what was done item by item, as JSON (no person); empty otherwise'
+            ),
         ]);
     }
 }

@@ -1,5 +1,58 @@
 # Changes
 
+## 1.9.0 (2026102602) — in progress (parts B and C of the round trip: the full backup before a discard, and the safe update)
+
+- **Safe update of a course in place** (`local_miwlab_preview_update` and `local_miwlab_apply_update`, feature `safeupdate`, capability
+  `local/miwlab:updatecourse`, in the course, manager archetype). The MiwLab lists operations (activities that changed, new ones,
+  removed ones, sections, order, and what is course-wide); the plugin sorts each one against the course AS IT IS and the progress of
+  each activity (a column per activity, counts only): **updated** (name, text, completion, access restriction, visibility, dates,
+  maximum grade, in the activities nobody has progress in or where the change cannot hurt), **added or hidden** (a new activity or
+  section comes in a package of its own, restored by Moodle only adding; what the MiwLab removed is hidden, never deleted) or **left
+  out**, with the reason (`progress`, `unknowntype`, `newfile`, `persondata`, `deleting`, `sectionzero`...). The preview changes nothing,
+  lives 30 minutes, belongs to the account that made it and the course it was made for, and is applied once. The application does
+  EXACTLY what the preview showed: it makes the backup without people first, checks again, per activity, the progress of what it is going
+  to change (somebody who did the activity between the preview and the application turns that item into "left out", reason
+  `progresschanged`) and, if anything fails in the middle, puts back every row it touched and deletes what it created (the signature of
+  the course is the same as before). Nothing the people did is touched: grades, submissions, attempts, posts and completion stay
+  as they are (the tests compare the people's data before and after).
+- **Course-wide items are a choice of whoever sends**, each with "keep" (the default, touches nothing) or "replace": the **blocks**
+  of the course page, one by one (add, replace the configuration, remove; a block that holds data of a person, like comments, cannot
+  be replaced or removed), the **completion criteria of the course** (one item: with nobody who concluded it replacing loses nothing;
+  with someone who concluded it the preview says how many lose the course completion, and replacing needs `forcediscard`, which makes
+  the full backup of 1.9.0 first, with the same `keepdays`; the call is refused without it) and the **gradebook of the course** (one
+  item: the grades of the activities stay, the final grade is recalculated and the preview says for how many people, and for how many
+  a total typed by hand stays).
+- `local_miwlab_get_restore_status` returns `updateresult` (what was done, item by item, no person) for the mode `update`.
+- New table `local_miwlab_updates` (the previews: operations and what each would do, counts only; deleted with the daily task after a day).
+  The privacy statement and `marketplace.md` say it.
+- The label name (a label has no name of its own) is derived again from the new text when the text of a label is updated.
+- Every Moodle global function, constant and class the new code uses is loaded by the code itself (`simbolos.sh`, issue 202).
+
+- **Full backup before a discard.** `local_miwlab_replace_course` with `forcediscard` now makes, before touching the course, a FULL
+  backup of it, with its people (enrolments, roles, grades and history, submissions, attempts, posts, completion, badges, groups;
+  not the logs), named `miwlab-before-replace-course-<id>-<date>-full.mbz` and kept only in the course backup area (Course >
+  Restore). Moodle's own backup makes it, so Moodle's privacy tools reach it like any course backup. If the site does not allow
+  those settings on (for example "include users" locked off), or the backup fails, the task ends in failure BEFORE the course is
+  touched, with `error:fullbackupnotallowed` or `error:fullbackupfailed`: nothing is replaced and nothing is discarded. Without
+  `forcediscard` nothing changes: the backup made before is still the one without people (`-nu`).
+- **New optional parameter `keepdays`** (30 to 365, default 180; outside the range the call is refused with
+  `error:invalidkeepdays`): the days the plugin keeps the full backup. A new table (`local_miwlab_fullcopies`: course, file name,
+  content hash, dates; no person) records each one, and the daily task deletes the ones whose days are over: only the file the
+  plugin registered (a file of the same name with another content stays), and when somebody already deleted it only the record goes.
+- `local_miwlab_get_restore_status` also returns `backuphaspeople` and `backupexpires`; `local_miwlab_get_info` lists the feature
+  `fullbackup`. The MiwLab offers the conscious discard only when it sees this feature.
+- **New permission in the "MiwLab" role: `moodle/backup:userinfo`**, only for that full backup (a divergence from the least privilege of
+  1.8.0, decided by the product owner so that the discard has a way back). `local_miwlab_replace_course` with `forcediscard` is
+  refused when the account lacks it in the course. The upgrade step gives it to the existing role; the same key reaches the function
+  with the new parameter.
+- **Every other backup the plugin makes is now provably without people.** Moodle locks all the settings of a backup "by permission"
+  when the account lacks `moodle/backup:configure` (the role lacks it), keeping the site default, so until 1.8.0 the absence of
+  `moodle/backup:userinfo` was what kept the people out. Now the backup made before a replacement WITHOUT discard and the content
+  backup (`local_miwlab_backup_course`) set "include users" and the settings that depend on it off explicitly (lifting only that lock
+  by permission, never a lock of the site configuration), and check them AFTER setting, user data of each activity and block
+  included: if any is still on (the site locked it on), the backup is refused with `error:backupwithpeople` and nothing is replaced.
+- Texts, privacy statement and `marketplace.md` updated (English and Portuguese).
+
 ## 1.8.0 (2026102503)
 
 - New web service function `local_miwlab_get_courses_overview`: the courses of some categories (and, by default, of the categories

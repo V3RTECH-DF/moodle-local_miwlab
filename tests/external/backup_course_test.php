@@ -155,6 +155,63 @@ final class backup_course_test extends \advanced_testcase {
         ));
     }
 
+    public function test_the_content_backup_carries_no_person_even_when_the_role_may_back_up_user_data(): void {
+        // Issue 204, criterion 1: the role of the plugin has moodle/backup:userinfo since 1.9.0 (the full backup before a discard);
+        // with the site default of including users, the content backup must still carry nobody, because it sets users off itself.
+        $this->resetAfterTest();
+        set_config('backup_general_users', 1, 'backup');
+        set_config('backup_general_users_locked', 0, 'backup');
+        $course = $this->course();
+        $user = $this->user_with(
+            (int) $course->category,
+            ['local/miwlab:backupcourse', 'moodle/backup:backupcourse', 'moodle/backup:userinfo']
+        );
+        $this->setUser($user);
+        $queued = backup_course::execute((int) $course->id);
+        $this->run_tasks();
+        $this->setUser($user);
+        $status = get_backup_status::execute($queued['backupid'], $queued['secret']);
+        $this->assertSame('finished', $status['status'], $status['errormessage']);
+        $file = get_file_storage()->get_file(
+            \context_course::instance($course->id)->id,
+            'local_miwlab',
+            'contentbackup',
+            $queued['backupid'],
+            '/',
+            $status['filename']
+        );
+        $dir = make_request_directory();
+        get_file_packer('application/vnd.moodle.backup')->extract_to_pathname($file, $dir);
+        $this->assertFileDoesNotExist($dir . '/users.xml');
+        $everything = '';
+        foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS)) as $f) {
+            if (substr($f->getFilename(), -4) === '.xml') {
+                $everything .= file_get_contents($f->getPathname());
+            }
+        }
+        $this->assertStringNotContainsString('MENSAGEM-SENTINELA', $everything);
+        $this->assertStringNotContainsString('sentinela@example.invalid', $everything);
+    }
+
+    public function test_the_content_backup_is_refused_when_the_site_locks_users_on(): void {
+        $this->resetAfterTest();
+        set_config('backup_general_users', 1, 'backup');
+        set_config('backup_general_users_locked', 1, 'backup');
+        $course = $this->course();
+        $user = $this->user_with(
+            (int) $course->category,
+            ['local/miwlab:backupcourse', 'moodle/backup:backupcourse', 'moodle/backup:userinfo']
+        );
+        $this->setUser($user);
+        $queued = backup_course::execute((int) $course->id);
+        $this->run_tasks();
+        $this->setUser($user);
+        $status = get_backup_status::execute($queued['backupid'], $queued['secret']);
+        $this->assertSame('failed', $status['status']);
+        $this->assertSame('error:backupwithpeople', $status['errorcode']);
+        $this->assertSame('', $status['filename']);
+    }
+
     public function test_the_missing_capabilities_are_named_and_the_site_course_is_refused(): void {
         $this->resetAfterTest();
         $course = $this->course();

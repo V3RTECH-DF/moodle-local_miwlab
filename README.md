@@ -77,6 +77,11 @@ With that token, the MiwLab uses the plugin to do ten things Moodle core web ser
    whole Moodle and not only the courses it made: `local_miwlab_get_courses_overview` returns, for up to 500 courses per call, the
    students enrolled, whether each course measures completion and how many completed. Counts only, made in the database; teachers,
    suspended or expired enrolments and deleted accounts are never counted; the right is checked in each category asked.
+11. **Update a course in place, only with what is safe for the people who study in it** (1.9.0): `local_miwlab_preview_update`
+   sorts what the MiwLab wants to change against the course as it is and the progress of each activity (updated, added or hidden,
+   or left out with the reason), changing nothing; `local_miwlab_apply_update` applies exactly that preview, in the background,
+   after a backup without people. Grades, submissions, attempts, posts and the completion of the people stay as they are. What is
+   course-wide (blocks, completion criteria of the course, gradebook of the course) is a choice of whoever sends, "keep" by default.
 
 The plugin makes no network request: it only answers the web service calls it receives. It stores no personal data
 (privacy API: null provider); it keeps the progress of each restore, without the person who asked for it, for 30 days
@@ -107,7 +112,7 @@ visit Site administration > Notifications). The upgrade adds the new columns of 
 the "MiwLab (local_miwlab)" service and resets the "MiwLab" role to the capabilities of the current release. The key does not
 change and nothing has to be generated again. A service made by hand (see below) is not touched: add to it the functions that
 are new in the release (1.7.0: `local_miwlab_get_certificate_templates`, `local_miwlab_get_upload_limits` and
-`local_miwlab_get_forum_topics`; 1.8.0: `local_miwlab_get_courses_overview`) and give its role the capabilities that go with them. The list of changes by release is in
+`local_miwlab_get_forum_topics`; 1.8.0: `local_miwlab_get_courses_overview`; 1.9.0: `local_miwlab_preview_update` and `local_miwlab_apply_update`) and give its role the capabilities that go with them. The list of changes by release is in
 `CHANGES.md`.
 
 ## Configuration after installing
@@ -135,7 +140,9 @@ capability and the function that needs it:
 | `local/miwlab:viewmoduletypes` | `local_miwlab_get_module_types`, `local_miwlab_get_course_formats`, `local_miwlab_get_blocks` (names only), `local_miwlab_get_certificate_templates` and `local_miwlab_get_upload_limits` (1.7.0: names and ids of templates; settings of the site) |
 | `local/miwlab:replacecourse`, `moodle/backup:backupcourse`, `moodle/restore:restorecourse`, `moodle/restore:configure`, `moodle/restore:rolldates` | `local_miwlab_get_replace_check`, `local_miwlab_replace_course` (1.5.0): the backup made before, the restore into the course, its settings (keep enrolments, roles and groups) and its dates (follow the start of the course) |
 | `local/miwlab:hidecourse`, `moodle/course:visibility` | `local_miwlab_hide_course` (1.5.0) |
+| `local/miwlab:updatecourse` (1.9.0), `moodle/backup:backupcourse`, `moodle/restore:restorecourse`, `moodle/restore:configure`, `moodle/restore:rolldates` | `local_miwlab_preview_update`, `local_miwlab_apply_update`: all of them, in the course, and `moodle/backup:userinfo` too when the call confirms a discard (the completion criteria of a course somebody concluded) |
 | `moodle/question:managecategory`, `moodle/question:add` | `local_miwlab_restore_course`, `local_miwlab_replace_course` (1.6.0): a package with the content of a course imported from Moodle brings its question bank, and Moodle's restore creates question categories and questions only for an account that can manage and add them in the course (without them it refuses the package before restoring it) |
+| `moodle/backup:userinfo` (1.9.0) | the full backup, with the people, that `local_miwlab_replace_course` makes before a replacement with `forcediscard` (kept in the course backup area, deleted after `keepdays` days, 30 to 365). Only that path: the other backups set users off and check it |
 | `local/miwlab:backupcourse`, `moodle/backup:backupcourse` | `local_miwlab_backup_course`, `local_miwlab_get_backup_status`, `local_miwlab_get_backup_chunk`, `local_miwlab_delete_backup` (1.6.0): the backup of the content of a course, without any data of a person, in the course |
 | `moodle/badges:deletebadge`, `moodle/badges:configurecriteria` | `local_miwlab_replace_course` (1.6.0): the course badges of the old content are deleted before the restore, and the ones the package brings are activated; `local_miwlab_restore_course` (1.6.0): the badges the package brings are activated only with `moodle/badges:configurecriteria` in the new course (without it they stay inactive) |
 | `local/miwlab:readforumtopics` | `local_miwlab_get_forum_topics` (1.7.0): the opening topics that the staff of a course started in its forums, in the course (it is personal data of the staff, so it is a capability of its own) |
@@ -624,6 +631,58 @@ ids of the people are read. The front page is never listed.
 
 For the same course the numbers are the ones of `local_miwlab_get_course_completion` (`students` equal; `completed` equal to its
 `coursecompletion.completed` when `completedby` is `course`).
+
+### local_miwlab_preview_update (1.9.0)
+
+| Parameter | Type |
+|---|---|
+| courseid | int |
+| operations | string: the list, as a JSON object (up to 4 MB) |
+| expectedsignature | string, optional: the state of the course the MiwLab knows (`local_miwlab_get_course_state`); refused with `error:coursechanged` if it changed |
+| draftitemid, filename | optional: the draft area with the package of ONLY the new activities and sections (when the list has any) |
+
+Needs the capabilities of `local/miwlab:updatecourse` in the course (all of the table above, the missing ones named in the refusal)
+and changes nothing. The list is read and validated whole before anything is looked at: a field it does not know, a value of the wrong
+kind, an id that is not an activity, a section or a block **of this course**, a package that is not exactly the activities and sections
+the list announces (or that carries an activity of the course) refuses the call. Shape:
+
+```
+{ "activities": [ { "cmid": 52, "name": "...", "text": { "field": "content", "html": "..." }, "completion": { ... },
+                    "availability": "<json>"|null, "visible": true, "dates": { "duedate": 1790000000 }, "grademax": 100 } ],
+  "added": [ { "key": "n1", "module": "page", "name": "...", "section": 12 } ],   // section: the id of the section, or the key of a new one
+  "retired": [ { "cmid": 51 } ], "sections": [ { "id": 12, "name": "...", "summary": "..." } ],
+  "newsections": [ { "key": "s1", "number": 5, "name": "..." } ], "retiredsections": [ { "id": 14 } ],
+  "order": [ { "section": 12, "items": [52, "n1", 53] } ], "sectionorder": [12, "s1", 13],
+  "coursesettings": { "completion": { "choice": "keep|replace", "aggregation": 1, "criteria": [ { "type": 7, "courseinstance": 3 } ] },
+                      "gradebook": { "choice": "keep|replace", "category": { "aggregation": 13 } },
+                      "blocks": [ { "proposal": "add|replace|remove", "choice": "keep|apply", "name": "html", "instanceid": 5, "config": { } } ] } }
+```
+
+It returns `previewid`, `signature`, `expires` (30 minutes), `enrolled` and `withprogress` (counts), `unknownmodules` (the modules whose
+progress the plugin cannot read: what depends on them is left out), `counts` and `items`: for each operation, its `group`
+(`update`, `add`, `skip`, `choice`), what it is (`kind`, `module`, `name`, `section`, `field`), what would be done (`action`), why it is
+left out (`reason`), how many people have progress in it (`people`; counts only), the people whose value stays (`kept`), the warnings
+that do not block (`warnings`), whether it could be deleted by hand (`suggestdelete`) and, for the course-wide items, `choice`,
+`canchoose` and `needsdiscard`. The progress is read **per activity**, with the same queries the replacement uses (the MiwLab account
+never counts).
+
+### local_miwlab_apply_update (1.9.0)
+
+| Parameter | Type |
+|---|---|
+| previewid | string |
+| forcediscard | bool, optional, default false: the conscious confirmation that somebody who concluded the course loses it (the preview says it with `needsdiscard`); a full backup is made first |
+| keepdays | int, optional, 30 to 365, default 180: the days the full backup is kept, when one is made |
+
+Queues the application of a preview, in the background (the answer is the one of `local_miwlab_get_restore_status`, mode `update`, whose
+`updateresult` carries, when it ends, what was done item by item as JSON, with no person). The preview must be the one of this
+account for this course, not yet applied and not expired; the course must be as it was when it was previewed
+(`error:coursechanged`) and no other operation can be running in it. A preview that replaces the completion criteria of a course somebody
+concluded is refused without `forcediscard` (`error:discardnotconfirmed`); with it the full backup is made BEFORE touching the course
+(and the call fails before touching it when the site does not allow it, `error:fullbackupnotallowed`). The application checks again,
+per activity, the progress of what it is going to change in grades or completion: if somebody did it since the preview, that item is
+left out (`progresschanged`). If anything fails, the rows it touched go back, what it created is deleted and the course has the same
+signature as before.
 
 ### local_miwlab_get_course_feedbacks
 

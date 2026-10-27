@@ -16,6 +16,7 @@
 
 namespace local_miwlab\external;
 
+use local_miwlab\local\fullcopies;
 use local_miwlab\local\replacer;
 use local_miwlab\local\restorer;
 
@@ -67,9 +68,16 @@ class replace_course extends base {
             ),
             'forcediscard' => new external_value(
                 PARAM_BOOL,
-                'Force replacement discarding existing progress',
+                'Force replacement discarding existing progress (1.9.0: a full backup, with the people, is made first; '
+                . 'if it cannot be made, nothing is replaced)',
                 VALUE_DEFAULT,
                 false
+            ),
+            'keepdays' => new external_value(
+                PARAM_INT,
+                'Days (30 to 365) the full backup made before a discard is kept in the course backup area, then deleted',
+                VALUE_DEFAULT,
+                fullcopies::DEFAULT_DAYS
             ),
         ]);
     }
@@ -84,6 +92,7 @@ class replace_course extends base {
      * @param string $expectedsignature
      * @param int $unchangedsince
      * @param bool $forcediscard
+     * @param int $keepdays
      * @return array
      */
     public static function execute(
@@ -93,7 +102,8 @@ class replace_course extends base {
         string $marker = '',
         string $expectedsignature = '',
         int $unchangedsince = 0,
-        bool $forcediscard = false
+        bool $forcediscard = false,
+        int $keepdays = fullcopies::DEFAULT_DAYS
     ): array {
         $params = self::validate_parameters(self::execute_parameters(), [
             'courseid' => $courseid,
@@ -103,11 +113,17 @@ class replace_course extends base {
             'expectedsignature' => $expectedsignature,
             'unchangedsince' => $unchangedsince,
             'forcediscard' => $forcediscard,
+            'keepdays' => $keepdays,
         ]);
+        fullcopies::require_valid_days($params['keepdays']);
         $course = replacer::course($params['courseid']);
         self::validate_category_context((int) $course->category);
         $context = \context_course::instance($course->id);
         replacer::require_capabilities($context, $course);
+        if ($params['forcediscard']) {
+            // 1.9.0: the discard goes with a full backup, which needs moodle/backup:userinfo; without it, nothing is queued.
+            replacer::require_capabilities($context, $course, replacer::FULL_BACKUP_CAPABILITIES);
+        }
         if ($params['marker'] !== '' && !restorer::valid_marker($params['marker'])) {
             throw new \moodle_exception('error:invalidmarker', 'local_miwlab');
         }
@@ -125,7 +141,8 @@ class replace_course extends base {
             $params['marker'],
             $params['expectedsignature'],
             $params['unchangedsince'],
-            $params['forcediscard']
+            $params['forcediscard'],
+            $params['keepdays']
         );
         return restorer::export($record);
     }

@@ -180,5 +180,70 @@ function xmldb_local_miwlab_upgrade($oldversion) {
         // read the strings and the service descriptions again.
         upgrade_plugin_savepoint(true, 2026102503, 'local', 'miwlab');
     }
+    if ($oldversion < 2026102601) {
+        // 1.9.0 (issue 204): the full backup (with the people) made before a replacement that discards progress. The table that
+        // registers each one (and when it is deleted), the three fields of the restore, and the permission to back up user data in
+        // the role (ensure_role gives it). The same key reaches the function with its new parameter; nothing to do for the service.
+        $table = new xmldb_table('local_miwlab_fullcopies');
+        if (!$dbman->table_exists($table)) {
+            $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+            $table->add_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+            $table->add_field('filename', XMLDB_TYPE_CHAR, '255', null, XMLDB_NOTNULL, null, null);
+            $table->add_field('contenthash', XMLDB_TYPE_CHAR, '40', null, XMLDB_NOTNULL, null, null);
+            $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+            $table->add_field('timeexpires', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+            $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+            $table->add_index('timeexpires', XMLDB_INDEX_NOTUNIQUE, ['timeexpires']);
+            $table->add_index('courseid-filename', XMLDB_INDEX_UNIQUE, ['courseid', 'filename']);
+            $dbman->create_table($table);
+        }
+        $table = new xmldb_table('local_miwlab_restores');
+        $fields = [
+            new xmldb_field('keepdays', XMLDB_TYPE_INTEGER, '3', null, XMLDB_NOTNULL, null, '180', 'topicsnote'),
+            new xmldb_field('fullbackup', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0', 'keepdays'),
+            new xmldb_field('backupexpires', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'fullbackup'),
+        ];
+        foreach ($fields as $field) {
+            if ($dbman->table_exists($table) && !$dbman->field_exists($table, $field)) {
+                $dbman->add_field($table, $field);
+            }
+        }
+        \local_miwlab\local\provisioning::ensure_role();
+        upgrade_plugin_savepoint(true, 2026102601, 'local', 'miwlab');
+    }
+    if ($oldversion < 2026102602) {
+        // 1.9.0 (part C, issue 204): the safe update of a course. The table of previews, two fields of the restore (the result
+        // and the
+        // preview applied), and the new permission in the role (ensure_role gives it). The same key reaches the new functions.
+        $table = new xmldb_table('local_miwlab_updates');
+        if (!$dbman->table_exists($table)) {
+            $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+            $table->add_field('previewid', XMLDB_TYPE_CHAR, '32', null, XMLDB_NOTNULL, null, null);
+            $table->add_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+            $table->add_field('accountid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+            $table->add_field('signature', XMLDB_TYPE_CHAR, '40', null, XMLDB_NOTNULL, null, null);
+            $table->add_field('operations', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL, null, null);
+            $table->add_field('items', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL, null, null);
+            $table->add_field('status', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+            $table->add_field('timeexpires', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+            $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+            $table->add_index('previewid', XMLDB_INDEX_UNIQUE, ['previewid']);
+            $table->add_index('timeexpires', XMLDB_INDEX_NOTUNIQUE, ['timeexpires']);
+            $dbman->create_table($table);
+        }
+        $table = new xmldb_table('local_miwlab_restores');
+        $fields = [
+            new xmldb_field('updateresult', XMLDB_TYPE_TEXT, null, null, null, null, null, 'backupexpires'),
+            new xmldb_field('previewid', XMLDB_TYPE_CHAR, '32', null, null, null, null, 'updateresult'),
+        ];
+        foreach ($fields as $field) {
+            if ($dbman->table_exists($table) && !$dbman->field_exists($table, $field)) {
+                $dbman->add_field($table, $field);
+            }
+        }
+        \local_miwlab\local\provisioning::ensure_role();
+        upgrade_plugin_savepoint(true, 2026102602, 'local', 'miwlab');
+    }
     return true;
 }

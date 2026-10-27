@@ -27,6 +27,11 @@
         <FIELD NAME="topicscreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="1.7.0: forum topics recreated from the package after the restore"/>
         <FIELD NAME="topicsskipped" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="1.7.0: forum topics of the package that could not be created"/>
         <FIELD NAME="topicsnote" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false" COMMENT="1.7.0: the first reason a topic was not created"/>
+        <FIELD NAME="keepdays" TYPE="int" LENGTH="3" NOTNULL="true" DEFAULT="180" SEQUENCE="false" COMMENT="1.9.0: days the full backup made before a discard is kept (30 to 365)"/>
+        <FIELD NAME="fullbackup" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="1.9.0: the backup kept carries the people (made before a discard)"/>
+        <FIELD NAME="backupexpires" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="1.9.0: when the full backup is deleted; 0 none"/>
+        <FIELD NAME="updateresult" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="1.9.0 (mode update): what was done, item by item (JSON, no person)"/>
+        <FIELD NAME="previewid" TYPE="char" LENGTH="32" NOTNULL="false" SEQUENCE="false" COMMENT="1.9.0 (mode update): the preview this run applies"/>
       </FIELDS>
       <KEYS>
         <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
@@ -35,6 +40,27 @@
         <INDEX NAME="restoreid" UNIQUE="true" FIELDS="restoreid"/>
         <INDEX NAME="timecreated" UNIQUE="false" FIELDS="timecreated"/>
         <INDEX NAME="courseid-mode" UNIQUE="false" FIELDS="courseid, mode"/>
+      </INDEXES>
+    </TABLE>
+    <TABLE NAME="local_miwlab_updates" COMMENT="Previews of the safe update of a course (1.9.0): the operations, what each one would do, and the state of the course. No person: counts only.">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="previewid" TYPE="char" LENGTH="32" NOTNULL="true" SEQUENCE="false" COMMENT="Public identifier of the preview"/>
+        <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="accountid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="The account (of the integration) that asked; only it can apply"/>
+        <FIELD NAME="signature" TYPE="char" LENGTH="40" NOTNULL="true" SEQUENCE="false" COMMENT="State of the course content when previewed"/>
+        <FIELD NAME="operations" TYPE="text" NOTNULL="true" SEQUENCE="false" COMMENT="The operations, validated (JSON)"/>
+        <FIELD NAME="items" TYPE="text" NOTNULL="true" SEQUENCE="false" COMMENT="What each operation would do (JSON)"/>
+        <FIELD NAME="status" TYPE="int" LENGTH="2" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="0 open, 1 applied (queued)"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="timeexpires" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="previewid" UNIQUE="true" FIELDS="previewid"/>
+        <INDEX NAME="timeexpires" UNIQUE="false" FIELDS="timeexpires"/>
       </INDEXES>
     </TABLE>
     <TABLE NAME="local_miwlab_backups" COMMENT="Content backups of courses made for the MiwLab (1.6.0), without any data of a person; the file is deleted once downloaded or after a day.">
@@ -56,6 +82,23 @@
       </KEYS>
       <INDEXES>
         <INDEX NAME="timecreated" UNIQUE="false" FIELDS="timecreated"/>
+      </INDEXES>
+    </TABLE>
+    <TABLE NAME="local_miwlab_fullcopies" COMMENT="Full backups (with the people) made before a replacement that discards progress (1.9.0): which file in the course backup area and when it is deleted. No data of a person.">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="The course backed up"/>
+        <FIELD NAME="filename" TYPE="char" LENGTH="255" NOTNULL="true" SEQUENCE="false" COMMENT="The file, in the course backup area of the course"/>
+        <FIELD NAME="contenthash" TYPE="char" LENGTH="40" NOTNULL="true" SEQUENCE="false" COMMENT="Content hash of the file made: only this one is deleted"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="timeexpires" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="When the plugin deletes the file"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="timeexpires" UNIQUE="false" FIELDS="timeexpires"/>
+        <INDEX NAME="courseid-filename" UNIQUE="true" FIELDS="courseid, filename"/>
       </INDEXES>
     </TABLE>
   </TABLES>

@@ -99,9 +99,27 @@ $functions = [
     'local_miwlab_replace_course' => [
         'classname' => 'local_miwlab\external\replace_course',
         'description' => 'Queues the replacement of the content of a course by a package, after a backup without user data; with '
-            . 'progress, only when asked to discard it (forcediscard).',
+            . 'progress, only when asked to discard it (forcediscard), and then after a full backup, with the people, kept in the '
+            . 'course backup area for keepdays days (30 to 365).',
         'type' => 'write',
         'capabilities' => 'local/miwlab:replacecourse, moodle/backup:backupcourse, moodle/restore:restorecourse, '
+            . 'moodle/restore:configure, moodle/restore:rolldates',
+    ],
+    'local_miwlab_preview_update' => [
+        'classname' => 'local_miwlab\external\preview_update',
+        'description' => 'Preview of the safe update of a course: each change sorted against the course now and the progress '
+            . 'of each activity (updated in place, added or hidden, or left out). Changes nothing.',
+        'type' => 'write',
+        'capabilities' => 'local/miwlab:updatecourse, moodle/backup:backupcourse, moodle/restore:restorecourse, '
+            . 'moodle/restore:configure, moodle/restore:rolldates',
+    ],
+    'local_miwlab_apply_update' => [
+        'classname' => 'local_miwlab\external\apply_update',
+        'description' => 'Queues the application of a preview of the safe update: exactly what the preview showed, without '
+            . 'losing a grade, a submission or a completion of anybody (replacing the completion criteria of a course somebody '
+            . 'concluded needs the conscious confirmation and a full backup).',
+        'type' => 'write',
+        'capabilities' => 'local/miwlab:updatecourse, moodle/backup:backupcourse, moodle/restore:restorecourse, '
             . 'moodle/restore:configure, moodle/restore:rolldates',
     ],
     'local_miwlab_get_course_state' => [
@@ -207,6 +225,8 @@ $services = [
             'local_miwlab_get_restore_status',
             'local_miwlab_get_replace_check',
             'local_miwlab_replace_course',
+            'local_miwlab_preview_update',
+            'local_miwlab_apply_update',
             'local_miwlab_hide_course',
             'local_miwlab_get_course_state',
             'local_miwlab_get_forum_types',

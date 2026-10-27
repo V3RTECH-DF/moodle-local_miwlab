@@ -28,7 +28,7 @@ class get_info extends base {
     const FEATURES = [
         'restore', 'restorestatus', 'findcourses', 'completion', 'feedback', 'moduletypes', 'courseformats', 'replace',
         'hidecourse', 'coursestate', 'blocks', 'badges', 'contentbackup', 'certificatetemplates', 'uploadlimits', 'forumtopics',
-        'coursesoverview',
+        'coursesoverview', 'fullbackup', 'safeupdate',
     ];
 
     /**

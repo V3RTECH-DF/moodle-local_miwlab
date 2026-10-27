@@ -138,7 +138,10 @@ final class provisioning_test extends \advanced_testcase {
         // the content, 1.5.0, goes only through the plugin, which checks local/miwlab:replacecourse and nobody's progress).
         $this->assertFalse(has_capability('moodle/course:update', $system, $account));
         $this->assertFalse(has_capability('moodle/course:changefullname', $system, $account));
-        $this->assertFalse(has_capability('moodle/backup:userinfo', $system, $account));
+        // 1.9.0 (issue 204): the only way back of a discard is a full backup, with the people; the permission is the one
+        // divergence from
+        // the least privilege of 1.8.0. Everything else the account cannot do is still checked above and below.
+        $this->assertTrue(has_capability('moodle/backup:userinfo', $system, $account));
         $this->assertTrue(has_capability('local/miwlab:replacecourse', $system, $account));
         $this->assertFalse(has_capability('moodle/course:manageactivities', $system, $account));
         if (class_exists(\core_auth\validate_user::class)) {
