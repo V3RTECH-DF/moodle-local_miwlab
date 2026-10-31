@@ -1,5 +1,9 @@
 # Changes
 
+## 1.9.1 (2026103100)
+
+- No change in the code. New build for the Moodle Marketplace automated tests.
+
 ## 1.9.0 (2026102602) — parts B and C of the round trip: the full backup before a discard, and the safe update
 
 - **Safe update of a course in place** (`local_miwlab_preview_update` and `local_miwlab_apply_update`, feature `safeupdate`, capability
