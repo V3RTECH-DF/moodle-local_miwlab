@@ -756,6 +756,14 @@ teacher accounts, anonymous and identified feedback). The repository runs moodle
 
 Translations are welcome through AMOS, the Moodle translation tool (https://lang.moodle.org).
 
+## Documentation
+
+This README is the reference for the plugin: what it creates in Moodle, every web service function with a `curl` example,
+every capability with the reason it is needed, the privacy statement and the list of changes by release (`CHANGES.md`). The
+MiwLab manual, which each MiwLab installation serves at its own address, has a page about this plugin for the person who
+administers the Moodle (installing and updating it, generating, replacing and revoking the key, what each permission is for,
+common problems): `/manual/complemento-do-moodle` on the address of the installation (the manual is in Portuguese).
+
 ## Copyright and license
 
 2026 V3RTECH TECNOLOGIA, CONSULTORIA E INOVACAO LTDA <suporte@v3rtech.com.br>. GNU GPL v3 or later (see LICENSE).

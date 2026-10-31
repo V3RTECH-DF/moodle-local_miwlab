@@ -1,6 +1,6 @@
 # Changes
 
-## 1.9.0 (2026102602) — in progress (parts B and C of the round trip: the full backup before a discard, and the safe update)
+## 1.9.0 (2026102602) — parts B and C of the round trip: the full backup before a discard, and the safe update
 
 - **Safe update of a course in place** (`local_miwlab_preview_update` and `local_miwlab_apply_update`, feature `safeupdate`, capability
   `local/miwlab:updatecourse`, in the course, manager archetype). The MiwLab lists operations (activities that changed, new ones,
