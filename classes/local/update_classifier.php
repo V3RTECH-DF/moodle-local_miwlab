@@ -232,11 +232,20 @@ class update_classifier {
             $lost = self::completed_people((int) $course->id);
             if (self::criteria_differ((int) $course->id, $cs['completion'])) {
                 $replace = $cs['completion']['choice'] === 'replace';
-                $add(['id' => 'cs:completion', 'group' => 'choice', 'kind' => 'coursesetting', 'ref' => 'completion',
-                    'field' => 'completion',
-                    'name' => '', 'action' => $replace ? 'update' : 'keep', 'choice' => $cs['completion']['choice'],
-                        'people' => $lost,
-                    'needsdiscard' => $lost > 0, 'warnings' => $lost > 0 && $replace ? ['courseconfirm'] : []]);
+                $obstacle = self::criteria_obstacle($modinfo, $ops, $cs['completion']);
+                if ($replace && $obstacle !== '') {
+                    // A criterion that cannot work (an activity without completion tracking never concludes): the whole
+                    // replacement stays out, with the reason, and the criteria the course has are kept.
+                    $add(['id' => 'cs:completion', 'group' => 'skip', 'kind' => 'coursesetting', 'ref' => 'completion',
+                        'field' => 'completion', 'name' => '', 'action' => 'skip', 'reason' => $obstacle,
+                        'choice' => $cs['completion']['choice'], 'people' => $lost, 'needsdiscard' => false]);
+                } else {
+                    $add(['id' => 'cs:completion', 'group' => 'choice', 'kind' => 'coursesetting', 'ref' => 'completion',
+                        'field' => 'completion',
+                        'name' => '', 'action' => $replace ? 'update' : 'keep', 'choice' => $cs['completion']['choice'],
+                            'people' => $lost,
+                        'needsdiscard' => $lost > 0, 'warnings' => $lost > 0 && $replace ? ['courseconfirm'] : []]);
+                }
             }
         }
         if (isset($cs['gradebook'])) {
@@ -324,25 +333,73 @@ class update_classifier {
      */
     public static function criteria_differ(int $courseid, array $want): bool {
         global $DB;
-        $have = $DB->get_records('course_completion_criteria', ['course' => $courseid]);
-        $ids = [];
-        foreach ($have as $c) {
-            if ((int) $c->criteriatype !== 7) {
-                return true;
+        $have = [];
+        foreach ($DB->get_records('course_completion_criteria', ['course' => $courseid]) as $c) {
+            switch ((int) $c->criteriatype) {
+                case update_operations::CRITERION_ACTIVITY:
+                    $have[] = update_operations::criterion_key(['type' => 4, 'cmid' => (int) $c->moduleinstance]);
+                    break;
+                case update_operations::CRITERION_GRADE:
+                    $have[] = update_operations::criterion_key(['type' => 6, 'grade' => (float) $c->gradepass]);
+                    break;
+                case update_operations::CRITERION_COURSE:
+                    $have[] = update_operations::criterion_key(['type' => 8, 'courseinstance' => (int) $c->courseinstance]);
+                    break;
+                default:
+                    // Self, date, unenrolment, duration or role: nothing the plugin writes, so the set is not the proposed one.
+                    return true;
             }
-            $ids[] = (int) $c->courseinstance;
         }
-        $wantids = array_map(fn($k) => (int) $k['courseinstance'], $want['criteria']);
-        sort($ids);
-        sort($wantids);
-        if ($ids !== $wantids) {
+        $wanted = array_map([update_operations::class, 'criterion_key'], $want['criteria']);
+        sort($have);
+        sort($wanted);
+        if ($have !== $wanted) {
             return true;
         }
-        if (!$ids) {
+        if (!$have) {
             return false;
         }
         $method = $DB->get_record('course_completion_aggr_methd', ['course' => $courseid, 'criteriatype' => null]);
-        return !$method || (int) $method->method !== (int) $want['aggregation'];
+        if (!$method || (int) $method->method !== (int) $want['aggregation']) {
+            return true;
+        }
+        $activities = array_filter($want['criteria'], fn($k) => $k['type'] === update_operations::CRITERION_ACTIVITY);
+        if (count($activities) > 1) {
+            $method = $DB->get_record('course_completion_aggr_methd', ['course' => $courseid,
+                'criteriatype' => update_operations::CRITERION_ACTIVITY]);
+            return !$method || (int) $method->method !== (int) $want['activityaggregation'];
+        }
+        return false;
+    }
+
+    /**
+     * Why the proposed criteria cannot work, or '' when they can: an activity criterion that points to an activity without
+     * completion tracking (in the course now, or turned off by the same list) or being deleted never concludes anybody.
+     *
+     * @param \course_modinfo $modinfo
+     * @param array $ops The normalised list.
+     * @param array $want
+     * @return string nocompletion or ''
+     */
+    public static function criteria_obstacle(\course_modinfo $modinfo, array $ops, array $want): string {
+        $turnedoff = [];
+        foreach ($ops['activities'] as $a) {
+            if (isset($a['completion']['completion'])) {
+                $turnedoff[$a['cmid']] = (int) $a['completion']['completion'];
+            }
+        }
+        foreach ($want['criteria'] as $k) {
+            if ($k['type'] !== update_operations::CRITERION_ACTIVITY) {
+                continue;
+            }
+            $cm = $modinfo->get_cm($k['cmid']);
+            // Zero is COMPLETION_TRACKING_NONE.
+            $tracking = $turnedoff[$k['cmid']] ?? ($cm ? (int) $cm->completion : 0);
+            if (!$cm || !empty($cm->deletioninprogress) || $tracking === 0) {
+                return 'nocompletion';
+            }
+        }
+        return '';
     }
 
     /**

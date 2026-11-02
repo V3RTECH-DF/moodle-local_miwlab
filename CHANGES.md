@@ -1,5 +1,42 @@
 # Changes
 
+## 1.10.0 (2026110201) — stamp of the activities, competencies, scales and course completion in the safe update
+
+- **Stamp of the activities, to recognise the copies of a course** (`local_miwlab_stamp_activities`, `local_miwlab_find_courses_by_stamp`).
+  When a course is copied in Moodle it loses the marker in the course ID number, but the ID number of its activities is kept. The MiwLab
+  writes `miwlab:<course>:a:<activity>` into the ID number of the activities of a course that was already in Moodle (capability
+  `local/miwlab:updatecourse`, in the course), **never over a value that is there**: it answers which stamps it wrote and which it skipped, with
+  the reason (`existing`, `same`, `duplicated`, `idnumbertaken`, `invalidstamp`, `notincourse`, `deleting`). It finds the courses of the site
+  whose activities carry the stamps of a course of the MiwLab, how many and which. `local_miwlab_find_courses` now says when two or more courses
+  carry the very same marker (`duplicated`), which one is exactly the marker asked (`exact`) and when the list was cut (`truncated`).
+- **Competencies** (`local_miwlab_get_competency_frameworks`, `local_miwlab_get_competencies`, `local_miwlab_complete_competency_framework`,
+  `local_miwlab_get_course_competencies`, `local_miwlab_set_course_competencies`; capabilities `local/miwlab:viewcompetencies` and
+  `local/miwlab:managecompetencies`, plus the four `moodle/competency:*` ones the API of Moodle asks, given to the role). They list what
+  exists; complete a framework (create it or the competencies it lacks, update the name and description of the ones that exist, and give a
+  competency with daughters the rule "achieved when all the children are" when it has no rule); and link competencies to a course and to its
+  activities so that **completing the activity marks the competency as achieved**. Everything goes through `core_competency\api`. It only
+  adds: no framework, competency or link is ever deleted, moved, re-scaled or hidden, and a link that exists is left as it is. A framework
+  made by the plugin has its highest scale item as the default and the proficient one (Moodle gives the default grade when an activity
+  completes a competency, so a default that is not proficient would rate without achieving); `completeachieves` tells when a framework of
+  the organisation is set up the other way. Learning plans are not touched.
+- **Scales** (`local_miwlab_get_scales`, capability `local/miwlab:viewmoduletypes`): the grading scales of the site, and of a course when it is
+  asked (with the right to read the course), with their items.
+- **Detection** (`local_miwlab_get_info`): new features `stampactivities`, `findcoursesbystamp`, `scales`, `competencies` and
+  `completioncriteria`; `competenciesenabled`; and `addons`, whether `availability_coursecompleted` ("Restriction by course completion") is
+  installed in the database, enabled, and in which version.
+- **Course completion in the safe update.** The update takes the completion criteria of the course **by activity** (type 4: an activity of the
+  course) and **by grade** (type 6: an absolute minimum grade of the course), as well as by another course, now with the type Moodle
+  really uses, **8**. Fixed: `criteria_differ` compared the criterion of a course with 7 (the manual conclusion by role) while Moodle
+  stores it as 8, so the plugin always saw a difference; the wire type of that criterion is 8 now, and 7 is refused. The same risk
+  classification as the rest: replacing criteria still needs the conscious confirmation and the full backup when somebody concluded the course,
+  and a criterion by activity on an activity without completion tracking leaves the item out with the reason `nocompletion` (the criteria the
+  course has stay). The application writes the aggregation rows as the completion page of the course does (before, a course with criteria
+  written by the update had none).
+- No table changes. The upgrade gives the role the six new permissions and Moodle adds the eight new functions to the "MiwLab
+  (local_miwlab)" service: the same key reaches them. A service made by hand needs them added.
+- Privacy: nothing new is stored. The stamp is an identifier of the course and of the activity in the MiwLab; frameworks, competencies and
+  their links are data of Moodle itself. Strings are in English; the Brazilian Portuguese pack is the issue of the translation.
+
 ## 1.9.1 (2026103100)
 
 - No change in the code. New build for the Moodle Marketplace automated tests.

@@ -26,7 +26,8 @@ use moodle_exception;
  * completiongradeitemnumber, completionpassgrade, type {column: int}}, availability? (JSON string or null), visible?, dates?
  * {column: int}, grademax?}, added[] {key, module, name, section (section id, or the key of a new section)}, retired[] {cmid},
  * sections[] {id, name?, summary?}, newsections[] {key, number, name}, retiredsections[] {id}, order[] {section, items[]},
- * sectionorder[], coursesettings {completion? {choice, aggregation, criteria[] {type 7, courseinstance}}, gradebook? {choice,
+ * sectionorder[], coursesettings {completion? {choice, aggregation, activityaggregation?, criteria[] {type 4, cmid | type 6,
+ * grade | type 8, courseinstance}}, gradebook? {choice,
  * category
  {aggregation, aggregateonlygraded, keephigh, droplow}}, blocks[] {proposal add|replace|remove, choice keep|apply, name,
  instanceid?,
@@ -343,6 +344,71 @@ class update_operations {
         $walk($tree, 0);
     }
 
+    /** Completion criterion of the course by activity (COMPLETION_CRITERIA_TYPE_ACTIVITY). */
+    const CRITERION_ACTIVITY = 4;
+
+    /** Completion criterion of the course by grade (COMPLETION_CRITERIA_TYPE_GRADE). */
+    const CRITERION_GRADE = 6;
+
+    /** Completion criterion of the course by another course (COMPLETION_CRITERIA_TYPE_COURSE; 7 is the manual one by role). */
+    const CRITERION_COURSE = 8;
+
+    /**
+     * One completion criterion of the course, validated: {type 4, cmid} (an activity of THIS course), {type 6, grade} (the
+     * absolute grade the person needs in the course, above zero) or {type 8, courseinstance} (another course). Any other type
+     * (7 is the manual conclusion by role, which the plugin does not write) or any other key refuses the whole list.
+     *
+     * @param mixed $k
+     * @param int $courseid
+     * @param \stdClass $ctx
+     * @return array
+     */
+    protected static function completion_criterion($k, int $courseid, \stdClass $ctx): array {
+        global $DB;
+        if (!is_array($k)) {
+            throw self::invalid('criterion is not an object');
+        }
+        $type = $k['type'] ?? null;
+        if ($type === self::CRITERION_ACTIVITY) {
+            $k = self::object($k, ['type', 'cmid'], 'criterion');
+            return ['type' => self::CRITERION_ACTIVITY, 'cmid' => self::cm_ref($k['cmid'] ?? null, $ctx->cms)];
+        }
+        if ($type === self::CRITERION_GRADE) {
+            $k = self::object($k, ['type', 'grade'], 'criterion');
+            $grade = $k['grade'] ?? null;
+            if ((!is_int($grade) && !is_float($grade)) || !is_finite((float) $grade) || $grade <= 0 || $grade > 1000000) {
+                throw self::invalid('criterion grade');
+            }
+            return ['type' => self::CRITERION_GRADE, 'grade' => round((float) $grade, 5)];
+        }
+        if ($type === self::CRITERION_COURSE) {
+            $k = self::object($k, ['type', 'courseinstance'], 'criterion');
+            $id = $k['courseinstance'] ?? null;
+            if (!is_int($id) || $id === $courseid || !$DB->record_exists('course', ['id' => $id])) {
+                throw self::invalid('criterion');
+            }
+            return ['type' => self::CRITERION_COURSE, 'courseinstance' => $id];
+        }
+        throw self::invalid('criterion type');
+    }
+
+    /**
+     * What identifies a criterion, to compare two sets of them.
+     *
+     * @param array $criterion A normalised criterion.
+     * @return string
+     */
+    public static function criterion_key(array $criterion): string {
+        switch ($criterion['type']) {
+            case self::CRITERION_ACTIVITY:
+                return '4:' . $criterion['cmid'];
+            case self::CRITERION_GRADE:
+                return '6:' . sprintf('%.5f', $criterion['grade']);
+            default:
+                return '8:' . $criterion['courseinstance'];
+        }
+    }
+
     /**
      * The course-wide settings, each with the choice of who sends it (keep is the default).
      *
@@ -365,24 +431,31 @@ class update_operations {
             return $v;
         };
         if (array_key_exists('completion', $c)) {
-            $x = self::object($c['completion'], ['choice', 'aggregation', 'criteria'], 'completion setting');
+            $x = self::object($c['completion'], ['choice', 'aggregation', 'activityaggregation', 'criteria'], 'completion setting');
             $criteria = [];
+            $seen = [];
             foreach (($x['criteria'] ?? []) as $k) {
-                $k = self::object($k, ['type', 'courseinstance'], 'criterion');
-                $id = $k['courseinstance'] ?? null;
-                if (
-                    ($k['type'] ?? null) !== 7 || !is_int($id) || $id === $courseid ||
-                    !$DB->record_exists('course', ['id' => $id])
-                ) {
-                    throw self::invalid('criterion');
+                $criterion = self::completion_criterion($k, $courseid, $ctx);
+                $key = self::criterion_key($criterion);
+                if (isset($seen[$key])) {
+                    throw self::invalid('criterion repeated');
                 }
-                $criteria[] = ['type' => 7, 'courseinstance' => $id];
+                $seen[$key] = true;
+                if ($criterion['type'] === self::CRITERION_GRADE && isset($seen['grade'])) {
+                    throw self::invalid('criterion repeated');
+                }
+                if ($criterion['type'] === self::CRITERION_GRADE) {
+                    $seen['grade'] = true;
+                }
+                $criteria[] = $criterion;
             }
             $agg = $x['aggregation'] ?? 1;
-            if (!in_array($agg, [1, 2], true)) {
+            $activityagg = $x['activityaggregation'] ?? $agg;
+            if (!in_array($agg, [1, 2], true) || !in_array($activityagg, [1, 2], true)) {
                 throw self::invalid('aggregation');
             }
-            $out['completion'] = ['choice' => $choice($x['choice'] ?? 'keep'), 'aggregation' => $agg, 'criteria' => $criteria];
+            $out['completion'] = ['choice' => $choice($x['choice'] ?? 'keep'), 'aggregation' => $agg,
+                'activityaggregation' => $activityagg, 'criteria' => $criteria];
         }
         if (array_key_exists('gradebook', $c)) {
             $x = self::object($c['gradebook'], ['choice', 'category'], 'gradebook setting');

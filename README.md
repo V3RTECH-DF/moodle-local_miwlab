@@ -82,6 +82,22 @@ With that token, the MiwLab uses the plugin to do ten things Moodle core web ser
    or left out with the reason), changing nothing; `local_miwlab_apply_update` applies exactly that preview, in the background,
    after a backup without people. Grades, submissions, attempts, posts and the completion of the people stay as they are. What is
    course-wide (blocks, completion criteria of the course, gradebook of the course) is a choice of whoever sends, "keep" by default.
+12. **Stamp the activities of a course that was already in Moodle, and find the copies of a course by it** (1.10.0): the course ID number
+   is lost when a course is copied in Moodle, but the ID number of the activities is kept. `local_miwlab_stamp_activities` writes
+   `miwlab:<course>:a:<activity>` into the ID number of the activities the MiwLab names, never over a value that is there (it says which it
+   wrote and which it skipped, and why), and `local_miwlab_find_courses_by_stamp` returns the courses of the site whose activities carry the
+   stamps of a course of the MiwLab, how many and which. `local_miwlab_find_courses` now also says when the same marker is on more than one
+   course.
+13. **Competencies** (1.10.0): `local_miwlab_get_competency_frameworks` and `local_miwlab_get_competencies` list what exists in Moodle;
+   `local_miwlab_complete_competency_framework` creates a framework, or the competencies it lacks, and updates the text of the ones that
+   exist (a competency with daughters gets the rule "achieved when all the children are"); `local_miwlab_set_course_competencies` links
+   competencies to a course and to its activities so that completing the activity marks the competency as achieved, and
+   `local_miwlab_get_course_competencies` reads those links. Everything goes through the competency API of Moodle. It only adds: it never
+   deletes, moves or re-scales a framework or a competency and never removes or changes a link that exists. Learning plans are not touched.
+14. **Scales** (1.10.0): `local_miwlab_get_scales` lists the grading scales of the site (and of a course), with their items, for activities
+   that are graded by a scale.
+15. **Detection** (1.10.0): `local_miwlab_get_info` also says whether the competencies of Moodle are enabled and whether the add-on
+   `availability_coursecompleted` ("Restriction by course completion") is installed and in which version.
 
 The plugin makes no network request: it only answers the web service calls it receives. It stores no personal data
 (privacy API: null provider); it keeps the progress of each restore, without the person who asked for it, for 30 days
@@ -112,7 +128,7 @@ visit Site administration > Notifications). The upgrade adds the new columns of 
 the "MiwLab (local_miwlab)" service and resets the "MiwLab" role to the capabilities of the current release. The key does not
 change and nothing has to be generated again. A service made by hand (see below) is not touched: add to it the functions that
 are new in the release (1.7.0: `local_miwlab_get_certificate_templates`, `local_miwlab_get_upload_limits` and
-`local_miwlab_get_forum_topics`; 1.8.0: `local_miwlab_get_courses_overview`; 1.9.0: `local_miwlab_preview_update` and `local_miwlab_apply_update`) and give its role the capabilities that go with them. The list of changes by release is in
+`local_miwlab_get_forum_topics`; 1.8.0: `local_miwlab_get_courses_overview`; 1.9.0: `local_miwlab_preview_update` and `local_miwlab_apply_update`; 1.10.0: `local_miwlab_stamp_activities`, `local_miwlab_find_courses_by_stamp`, `local_miwlab_get_scales`, `local_miwlab_get_competency_frameworks`, `local_miwlab_get_competencies`, `local_miwlab_complete_competency_framework`, `local_miwlab_get_course_competencies` and `local_miwlab_set_course_competencies`) and give its role the capabilities that go with them. The list of changes by release is in
 `CHANGES.md`.
 
 ## Configuration after installing
@@ -136,17 +152,19 @@ capability and the function that needs it:
 | `moodle/course:ignoreavailabilityrestrictions` | `core_course_get_contents` returns the activities an access restriction hides from the account |
 | `moodle/category:viewhiddencategories` | `core_course_get_categories` lists hidden categories too |
 | `moodle/restore:restorecourse`, `moodle/course:create`, `local/miwlab:restorecourse` | `local_miwlab_get_restore_categories`, `local_miwlab_restore_course` (restore as a new course) |
-| `local/miwlab:viewreports` | `local_miwlab_get_courses_overview` (1.8.0: counts of the courses of whole categories, checked in each category), `local_miwlab_get_course_completion`, `_get_course_feedbacks`, `_get_feedback_analysis`, `_find_courses` (counts only), `_get_course_state`, `_get_forum_types` (1.6.0, type of each forum) |
-| `local/miwlab:viewmoduletypes` | `local_miwlab_get_module_types`, `local_miwlab_get_course_formats`, `local_miwlab_get_blocks` (names only), `local_miwlab_get_certificate_templates` and `local_miwlab_get_upload_limits` (1.7.0: names and ids of templates; settings of the site) |
+| `local/miwlab:viewreports` | `local_miwlab_get_courses_overview` (1.8.0: counts of the courses of whole categories, checked in each category), `local_miwlab_get_course_completion`, `_get_course_feedbacks`, `_get_feedback_analysis`, `_find_courses` (counts only), `_get_course_state`, `_get_forum_types` (1.6.0, type of each forum), `_find_courses_by_stamp` (1.10.0) |
+| `local/miwlab:viewmoduletypes` | `local_miwlab_get_module_types`, `local_miwlab_get_course_formats`, `local_miwlab_get_blocks` (names only), `local_miwlab_get_certificate_templates` and `local_miwlab_get_upload_limits` (1.7.0: names and ids of templates; settings of the site), `local_miwlab_get_scales` (1.10.0: the grading scales, names and items) |
 | `local/miwlab:replacecourse`, `moodle/backup:backupcourse`, `moodle/restore:restorecourse`, `moodle/restore:configure`, `moodle/restore:rolldates` | `local_miwlab_get_replace_check`, `local_miwlab_replace_course` (1.5.0): the backup made before, the restore into the course, its settings (keep enrolments, roles and groups) and its dates (follow the start of the course) |
 | `local/miwlab:hidecourse`, `moodle/course:visibility` | `local_miwlab_hide_course` (1.5.0) |
-| `local/miwlab:updatecourse` (1.9.0), `moodle/backup:backupcourse`, `moodle/restore:restorecourse`, `moodle/restore:configure`, `moodle/restore:rolldates` | `local_miwlab_preview_update`, `local_miwlab_apply_update`: all of them, in the course, and `moodle/backup:userinfo` too when the call confirms a discard (the completion criteria of a course somebody concluded) |
+| `local/miwlab:updatecourse` (1.9.0), `moodle/backup:backupcourse`, `moodle/restore:restorecourse`, `moodle/restore:configure`, `moodle/restore:rolldates` | `local_miwlab_preview_update`, `local_miwlab_apply_update`: all of them, in the course, and `moodle/backup:userinfo` too when the call confirms a discard (the completion criteria of a course somebody concluded). From 1.10.0 `local/miwlab:updatecourse` alone is what `local_miwlab_stamp_activities` asks (it writes the ID number of activities, never over a value) |
 | `moodle/question:managecategory`, `moodle/question:add` | `local_miwlab_restore_course`, `local_miwlab_replace_course` (1.6.0): a package with the content of a course imported from Moodle brings its question bank, and Moodle's restore creates question categories and questions only for an account that can manage and add them in the course (without them it refuses the package before restoring it) |
 | `moodle/backup:userinfo` (1.9.0) | the full backup, with the people, that `local_miwlab_replace_course` makes before a replacement with `forcediscard` (kept in the course backup area, deleted after `keepdays` days, 30 to 365). Only that path: the other backups set users off and check it |
 | `local/miwlab:backupcourse`, `moodle/backup:backupcourse` | `local_miwlab_backup_course`, `local_miwlab_get_backup_status`, `local_miwlab_get_backup_chunk`, `local_miwlab_delete_backup` (1.6.0): the backup of the content of a course, without any data of a person, in the course |
 | `moodle/badges:deletebadge`, `moodle/badges:configurecriteria` | `local_miwlab_replace_course` (1.6.0): the course badges of the old content are deleted before the restore, and the ones the package brings are activated; `local_miwlab_restore_course` (1.6.0): the badges the package brings are activated only with `moodle/badges:configurecriteria` in the new course (without it they stay inactive) |
 | `local/miwlab:readforumtopics` | `local_miwlab_get_forum_topics` (1.7.0): the opening topics that the staff of a course started in its forums, in the course (it is personal data of the staff, so it is a capability of its own) |
 | `mod/forum:startdiscussion`, `mod/forum:addnews`, `mod/forum:createattachment`, `mod/forum:pindiscussions` | `local_miwlab_restore_course`, `local_miwlab_replace_course` (1.7.0): the topics recreated after the restore need them in the restored course (`addnews` for the announcements forum, `createattachment` for the files, `pindiscussions` to keep a discussion pinned); without one the course is restored all the same, and the topics that need it are counted as not created |
+| `local/miwlab:viewcompetencies`, `moodle/competency:competencyview`, `moodle/competency:coursecompetencyview` (1.10.0) | `local_miwlab_get_competency_frameworks`, `local_miwlab_get_competencies`, `local_miwlab_get_course_competencies`: the frameworks of the site, their competencies and the competencies linked to a course. The plugin capability is checked first; Moodle's competency API checks its own in the context of the framework or of the course |
+| `local/miwlab:managecompetencies`, `moodle/competency:competencymanage`, `moodle/competency:coursecompetencymanage` (1.10.0) | `local_miwlab_complete_competency_framework` (adds a framework or competencies and updates text), `local_miwlab_set_course_competencies` (links competencies to a course and its activities). They never delete anything: the permissions are what the competency API asks for, and the role only reaches them through these two functions |
 | every `mod/<module>:view` of the site | `core_course_get_contents` skips an activity whose view capability the account lacks: without them a quiz, an assignment, a feedback or an H5P activity is missing from the structure (checked on 4.1 and 5.1). Read only; the role gets the new ones on every upgrade and every key generated |
 
 `moodle/course:update` is deliberately not there: it would let the key change the settings of every course, and checked on
@@ -271,10 +289,15 @@ No parameters. Detects the plugin.
 { "component": "local_miwlab", "version": 2026102000, "release": "1.4.0",
   "moodleversion": "2026100500.02", "moodlerelease": "5.3+ (Build: 20261013)",
   "features": ["restore", "restorestatus", "findcourses", "completion", "feedback", "moduletypes", "courseformats"],
+  "competenciesenabled": true,                      // 1.10.0: the competencies of Moodle are enabled on the site
+  "addons": [ { "component": "availability_coursecompleted", "installed": true, "enabled": true,
+                "version": 2025071800, "release": "5.0.0" } ],   // 1.10.0: add-ons the MiwLab asks about; installed means in the database
   "systemcapabilities": { "restorecourse": true, "viewreports": true, "viewmoduletypes": true } }
 ```
 
-`features` only grows: a new feature adds a name, and a name never changes meaning.
+`features` only grows: a new feature adds a name, and a name never changes meaning. 1.10.0 adds `stampactivities`,
+`findcoursesbystamp`, `scales`, `competencies` and `completioncriteria` (the safe update takes the completion criteria of the course
+by activity and by grade).
 
 ### local_miwlab_get_module_types
 
@@ -575,8 +598,149 @@ Only courses where the account holds `local/miwlab:viewreports`; at most 100.
 
 ```
 { "courses": [ { "id": 3, "categoryid": 2, "fullname": "...", "shortname": "...", "idnumber": "miwlab:...:v2",
-                 "visible": false, "url": "https://moodle.example/course/view.php?id=3", "timecreated": 1792397100 } ] }
+                 "visible": false, "url": "https://moodle.example/course/view.php?id=3", "timecreated": 1792397100,
+                 "exact": true } ],
+  "duplicated": false, "truncated": false }
 ```
+
+Moodle does not make the ID number of a course unique when the course is copied through the web service, so the same marker can be on
+more than one course (1.10.0): the list carries all of them (up to 100), `duplicated` says that two or more carry the very same ID
+number, `exact` says which course has exactly the marker asked (and not only the beginning of a longer one), and `truncated` says that
+there were more than the limit. A course copied in the Moodle screens usually has no marker at all: find it by the stamp of its
+activities (`local_miwlab_find_courses_by_stamp`).
+
+### local_miwlab_find_courses_by_stamp (1.10.0)
+
+| Parameter | Type |
+|---|---|
+| miwlabcourse | string: the identifier of the course in the MiwLab, the `<course>` of the stamp (letters, digits, `-` and `_`) |
+| includestamps | bool, optional, default true: list the stamped activities of each course |
+
+The courses of the site that have activities whose ID number is `miwlab:<course>:a:<activity>` (the activities being deleted do not count),
+only the ones where the account holds `local/miwlab:viewreports`; at most 100. A copy of a course in Moodle loses the marker of the course
+and keeps the ID number of its activities, so this is how the copies of a course of the MiwLab are found.
+
+```
+{ "courses": [ { "id": 3, "categoryid": 2, "fullname": "...", "shortname": "...", "idnumber": "", "marked": false,
+                 "visible": true, "url": "...", "timecreated": 1792397100, "stampedcount": 12,
+                 "stamps": [ { "cmid": 52, "stamp": "miwlab:<course>:a:<activity>" } ] } ],
+  "total": 1, "truncated": false }
+```
+
+`marked` says that the course ID number is still the marker of that course of the MiwLab. The `_` of an identifier is not a wildcard.
+
+### local_miwlab_stamp_activities (1.10.0)
+
+| Parameter | Type |
+|---|---|
+| courseid | int |
+| activities | list of `{ cmid: int, stamp: string }`; up to 2000 |
+
+Needs `local/miwlab:updatecourse` in the course. Writes each stamp (`miwlab:<course>:a:<activity>`, each identifier up to 60 letters,
+digits, `-` or `_`, 100 characters in all) into the ID number of the activity, **only where the activity has none**: a value that is there,
+the organisation's own or another stamp, is never overwritten. It answers which it wrote and which it skipped:
+
+```
+{ "written": [ { "cmid": 52, "stamp": "miwlab:c1:a:a1" } ],
+  "skipped": [ { "cmid": 53, "stamp": "miwlab:c1:a:a2", "reason": "existing", "current": "codigo-da-organizacao" } ],
+  "writtencount": 1, "skippedcount": 1 }
+```
+
+Reasons: `invalidstamp` (the format), `notincourse` (the activity is not in this course, and is not touched), `deleting`, `same` (it already
+has this stamp), `existing` (it has another ID number), `duplicated` (the stamp is already in another activity of the course, or the
+activity is named twice in the list) and `idnumbertaken` (a grade item of the course already uses it).
+
+### local_miwlab_get_scales (1.10.0)
+
+| Parameter | Type |
+|---|---|
+| courseid | int, optional, default 0: a course whose own scales come too (the account needs `local/miwlab:viewreports` in it) |
+
+Needs `local/miwlab:viewmoduletypes`. The grading scales of the site (`courseid` 0) and, when a course is given, the ones of that course:
+
+```
+{ "scales": [ { "id": 4, "courseid": 0, "name": "Estrelas", "items": ["Uma estrela", "Duas estrelas", "Tres estrelas"],
+                "itemcount": 3, "description": "" } ] }
+```
+
+The items go from the lowest to the highest.
+
+### local_miwlab_get_competency_frameworks (1.10.0)
+
+No parameters. Needs `local/miwlab:viewcompetencies`. Returns the competency frameworks the account can see: `id`, `idnumber` (unique in
+the site), `shortname`, `description`, `visible`, `categoryid` (0: the whole site), the scale (`scaleid`, `scalename`, `scaleitems`,
+`scaleconfiguration`: which items are the default and the proficient ones) and `competencycount`. With the competencies of Moodle turned off
+the call fails with `error:competenciesdisabled`.
+
+### local_miwlab_get_competencies (1.10.0)
+
+| Parameter | Type |
+|---|---|
+| frameworkid | int |
+
+Needs `local/miwlab:viewcompetencies`. The competencies of the framework, flat: `id`, `idnumber` (unique in the framework), `shortname`,
+`description`, `parentid` and `parentidnumber` (empty: first level), `sortorder`, `ruletype` and `ruleoutcome` (`none`, `evidence`, `complete`
+or `recommend`: what the rule of the competency does) and `scaleid` (0: the one of the framework).
+
+### local_miwlab_complete_competency_framework (1.10.0)
+
+| Parameter | Type |
+|---|---|
+| framework | `{ idnumber, shortname?, description?, scaleid?, categoryid? }`: found by `idnumber` or created with it |
+| competencies | list of `{ idnumber, shortname?, description?, parentidnumber? }` |
+| parentrule | bool, optional, default true |
+
+Needs `local/miwlab:managecompetencies` (and the competency permissions of Moodle, which the role has). **It only adds and updates text.**
+The framework is found by its `idnumber`; if none has it, it is created (visible, in the site or in the category, with `scaleid` or the
+default competency scale of Moodle: the highest item is the default and the proficient one, so that completing an activity achieves the
+competency; `shortname` is needed to create). If it exists, only its name and description are updated, and only when given and different.
+Each competency is found by its `idnumber` inside the framework: the missing ones are created (under `parentidnumber`, in any order of
+the list), the ones that exist have their name and description updated when given and different. A competency is never deleted, moved to
+another parent, given another scale or hidden; the framework is never deleted, re-scaled or hidden; whatever the list does not name stays
+as it is. With `parentrule`, a competency that has daughters in the list and no rule gets the rule "achieved when all the children are"
+(Moodle takes the rule of a mother away when a daughter is added, so it is set after); a rule the organisation set stays (`rule`: `kept`).
+
+```
+{ "frameworkid": 7, "frameworkaction": "created|updated|unchanged",
+  "competencies": [ { "idnumber": "c1", "id": 31, "action": "created|updated|unchanged|skipped",
+                      "reason": "", "rule": "set" } ],
+  "created": 3, "updated": 0, "skipped": 0 }
+```
+
+Skipped: `invalid` (no code, a name or code longer than 100 characters, or no name for a new one), `duplicated` (the code twice in the list) or
+`parentnotfound`. `parentkept` in `reason` says that the competency exists under another parent, and it was not moved. It all runs in one
+transaction.
+
+### local_miwlab_get_course_competencies (1.10.0)
+
+| Parameter | Type |
+|---|---|
+| courseid | int |
+
+Needs `local/miwlab:viewreports` and `local/miwlab:viewcompetencies` in the course. The competencies linked to the course, with the framework
+and, for each, the activities it is linked to and what happens when each is completed (`ruleoutcome`: `none`, `evidence`, `recommend` or
+`complete`).
+
+### local_miwlab_set_course_competencies (1.10.0)
+
+| Parameter | Type |
+|---|---|
+| courseid | int |
+| links | list of `{ competencyid: int, cmids: int[], outcome?: none, evidence, recommend or complete (default complete) }` |
+
+Needs `local/miwlab:managecompetencies` in the course. Links each competency to the course and to the activities in `cmids`, with what
+happens when the activity is completed: `complete` marks the competency as achieved for whoever completes it. **A link that exists is left
+as it is** (`action: existing`, with the outcome it has) and nothing is removed. `completeachieves` says whether `complete` really achieves
+the competency: it uses the default grade of the scale of the framework, and a framework of the organisation may have a default that is not
+a proficient one.
+
+```
+{ "links": [ { "competencyid": 31, "courseaction": "added|existing|skipped", "reason": "", "completeachieves": true,
+               "activities": [ { "cmid": 52, "action": "added|existing|skipped", "ruleoutcome": "complete", "reason": "" } ] } ] }
+```
+
+Skipped: `competencynotfound`, `nopermission` (the account does not see the framework), `frameworkhidden` (Moodle does not link a competency
+of a hidden framework to a course); an activity: `notincourse` or `deleting`. In one transaction: a failure leaves nothing linked.
 
 ### local_miwlab_get_course_completion
 
@@ -653,10 +817,19 @@ the list announces (or that carries an activity of the course) refuses the call.
   "retired": [ { "cmid": 51 } ], "sections": [ { "id": 12, "name": "...", "summary": "..." } ],
   "newsections": [ { "key": "s1", "number": 5, "name": "..." } ], "retiredsections": [ { "id": 14 } ],
   "order": [ { "section": 12, "items": [52, "n1", 53] } ], "sectionorder": [12, "s1", 13],
-  "coursesettings": { "completion": { "choice": "keep|replace", "aggregation": 1, "criteria": [ { "type": 7, "courseinstance": 3 } ] },
+  "coursesettings": { "completion": { "choice": "keep|replace", "aggregation": 1, "activityaggregation": 1,
+                                      "criteria": [ { "type": 4, "cmid": 52 }, { "type": 6, "grade": 60 }, { "type": 8, "courseinstance": 3 } ] },
                       "gradebook": { "choice": "keep|replace", "category": { "aggregation": 13 } },
                       "blocks": [ { "proposal": "add|replace|remove", "choice": "keep|apply", "name": "html", "instanceid": 5, "config": { } } ] } }
 ```
+
+The completion criteria of the course (1.10.0) are the ones of Moodle: `type` 4, concluding an activity of THIS course (`cmid`); 6, a minimum grade
+in the course (`grade`, the absolute value of the course total, above zero, at most one); 8, concluding another course (`courseinstance`).
+`aggregation` combines the types (1 all, 2 any) and `activityaggregation` the activities (default: the same). Any other type is refused
+(7 is the manual conclusion by role, which the plugin does not write; before 1.10.0 the plugin took 7 for the criterion of another course
+and compared it wrongly with the 8 that Moodle stores). The replacement is one item, as before: it needs the confirmation and the full backup
+when somebody concluded the course, and a criterion by activity whose activity has no completion tracking (or turns it off in the same
+list) leaves the whole item out with the reason `nocompletion` and the criteria the course has stay.
 
 It returns `previewid`, `signature`, `expires` (30 minutes), `enrolled` and `withprogress` (counts), `unknownmodules` (the modules whose
 progress the plugin cannot read: what depends on them is left out), `counts` and `items`: for each operation, its `group`

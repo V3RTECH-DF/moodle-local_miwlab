@@ -195,6 +195,60 @@ $functions = [
         'type' => 'read',
         'capabilities' => 'local/miwlab:viewmoduletypes',
     ],
+    'local_miwlab_stamp_activities' => [
+        'classname' => 'local_miwlab\external\stamp_activities',
+        'description' => 'Writes the stamp of the MiwLab (miwlab:<course>:a:<activity>) into the ID number of activities of a '
+            . 'course, never over a value that is there; says which were written and which skipped, and why.',
+        'type' => 'write',
+        'capabilities' => 'local/miwlab:updatecourse',
+    ],
+    'local_miwlab_find_courses_by_stamp' => [
+        'classname' => 'local_miwlab\external\find_courses_by_stamp',
+        'description' => 'Courses of the site whose activities carry the stamp of a course of the MiwLab (the copies of the '
+            . 'course), with how many activities and which.',
+        'type' => 'read',
+        'capabilities' => 'local/miwlab:viewreports',
+    ],
+    'local_miwlab_get_scales' => [
+        'classname' => 'local_miwlab\external\get_scales',
+        'description' => 'Grading scales of the site (and the ones of a course), with their names and items.',
+        'type' => 'read',
+        'capabilities' => 'local/miwlab:viewmoduletypes',
+    ],
+    'local_miwlab_get_competency_frameworks' => [
+        'classname' => 'local_miwlab\external\get_competency_frameworks',
+        'description' => 'Competency frameworks of Moodle the account can see, with their scale and how many competencies '
+            . 'each has.',
+        'type' => 'read',
+        'capabilities' => 'local/miwlab:viewcompetencies, moodle/competency:competencyview',
+    ],
+    'local_miwlab_get_competencies' => [
+        'classname' => 'local_miwlab\external\get_competencies',
+        'description' => 'Competencies of a framework, flat with the parent of each and the rule of each.',
+        'type' => 'read',
+        'capabilities' => 'local/miwlab:viewcompetencies, moodle/competency:competencyview',
+    ],
+    'local_miwlab_complete_competency_framework' => [
+        'classname' => 'local_miwlab\external\complete_competency_framework',
+        'description' => 'Completes a competency framework: creates it or the competencies that are missing and updates the text; '
+            . 'never deletes, moves or re-scales.',
+        'type' => 'write',
+        'capabilities' => 'local/miwlab:managecompetencies, moodle/competency:competencymanage',
+    ],
+    'local_miwlab_get_course_competencies' => [
+        'classname' => 'local_miwlab\external\get_course_competencies',
+        'description' => 'Competencies linked to a course and to its activities, with what happens when each activity is '
+            . 'completed.',
+        'type' => 'read',
+        'capabilities' => 'local/miwlab:viewcompetencies, moodle/competency:coursecompetencyview',
+    ],
+    'local_miwlab_set_course_competencies' => [
+        'classname' => 'local_miwlab\external\set_course_competencies',
+        'description' => 'Links competencies to a course and to its activities (completing the activity marks the competency as '
+            . 'achieved); a link that exists is left as it is and nothing is removed.',
+        'type' => 'write',
+        'capabilities' => 'local/miwlab:managecompetencies, moodle/competency:coursecompetencymanage',
+    ],
 ];
 
 // The service of the MiwLab key, with every function the MiwLab calls (the core ones too; the anonymous feedback is read by
@@ -240,6 +294,14 @@ $services = [
             'local_miwlab_get_courses_overview',
             'local_miwlab_get_course_feedbacks',
             'local_miwlab_get_feedback_analysis',
+            'local_miwlab_stamp_activities',
+            'local_miwlab_find_courses_by_stamp',
+            'local_miwlab_get_scales',
+            'local_miwlab_get_competency_frameworks',
+            'local_miwlab_get_competencies',
+            'local_miwlab_complete_competency_framework',
+            'local_miwlab_get_course_competencies',
+            'local_miwlab_set_course_competencies',
         ],
     ],
 ];

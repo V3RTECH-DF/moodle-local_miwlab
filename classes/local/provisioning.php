@@ -90,6 +90,10 @@ class provisioning {
      *   discard and the content backup) sets "include users" off explicitly and checks it after setting (backup_scope), so the
      *   permission changes nothing for them.
      *
+     * - local/miwlab:viewcompetencies, local/miwlab:managecompetencies and the four moodle/competency:* capabilities (1.10.0, issue
+     *   252): the functions that list the frameworks, complete a framework and link competencies to a course and its activities
+     *   (they only add and never delete). local/miwlab:updatecourse also covers stamping the ID number of activities (issue 254).
+     *
      * Plus every mod/<module>:view of the site (see capabilities()): core_course_get_contents skips an activity whose
      * mod/<module>:view the account lacks (cm_info::is_user_access_restricted_by_capability), so without them a quiz, an
      * assignment, a feedback or an H5P activity would not appear in the structure the MiwLab reads.
@@ -129,6 +133,15 @@ class provisioning {
         'mod/forum:addnews',
         'mod/forum:createattachment',
         'mod/forum:pindiscussions',
+        // 1.10.0 (issue 252): the competencies of Moodle. The plugin functions check their own capability and then call the
+        // competency API of Moodle, which checks these in the context of the framework (the site or a category) and of the
+        // course. Frameworks are never deleted by the plugin; the capabilities are what the API asks for.
+        'local/miwlab:viewcompetencies',
+        'local/miwlab:managecompetencies',
+        'moodle/competency:competencyview',
+        'moodle/competency:competencymanage',
+        'moodle/competency:coursecompetencyview',
+        'moodle/competency:coursecompetencymanage',
     ];
 
     /**

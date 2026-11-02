@@ -593,7 +593,7 @@ final class update_test extends \advanced_testcase {
      */
     protected function completion_ops(\stdClass $c, string $choice): string {
         return $this->ops(['coursesettings' => ['completion' => ['choice' => $choice, 'aggregation' => 1,
-            'criteria' => [['type' => 7, 'courseinstance' => (int) $c->prerequisite->id]]]]]);
+            'criteria' => [['type' => 8, 'courseinstance' => (int) $c->prerequisite->id]]]]]);
     }
 
     public function test_keeping_is_the_default_and_touches_nothing(): void {
@@ -907,5 +907,220 @@ final class update_test extends \advanced_testcase {
         $this->assertSame([5, 2, 1], update_runner::slots([5, 1, 2], [2, 1], [1, 2]));
         $this->assertSame([7, 1, 2], update_runner::slots([7], [1, 2], [1, 2]), 'the surplus goes to the end');
         $this->assertSame([4, 5], update_runner::slots([4, 5], [], []));
+    }
+
+    /**
+     * A course with pages that have completion by hand, and nothing concluded: the base of the criteria by activity.
+     *
+     * @param int $pages
+     * @return \stdClass course, student, cms (cmid by number)
+     */
+    protected function course_with_tracked_pages(int $pages = 2): \stdClass {
+        global $CFG;
+        require_once($CFG->libdir . '/completionlib.php');
+        set_config('enablecompletion', 1);
+        $g = $this->getDataGenerator();
+        $c = new \stdClass();
+        $c->course = $g->create_course(['enablecompletion' => 1]);
+        $c->student = $g->create_and_enrol($c->course, 'student');
+        $c->cm = [];
+        for ($i = 1; $i <= $pages; $i++) {
+            $page = $g->create_module('page', ['course' => $c->course->id, 'name' => 'Leitura ' . $i, 'completion' => 1]);
+            $c->cm[$i] = (int) $page->cmid;
+        }
+        return $c;
+    }
+
+    /**
+     * The operations that replace the criteria of the course by these.
+     *
+     * @param array[] $criteria
+     * @param array $extra aggregation and activityaggregation
+     * @return string
+     */
+    protected function criteria_ops(array $criteria, array $extra = []): string {
+        return $this->ops(['coursesettings' => ['completion' => ['choice' => 'replace', 'criteria' => $criteria] + $extra]]);
+    }
+
+    /**
+     * The criteria the course has, as "type:what" and sorted.
+     *
+     * @param int $courseid
+     * @return string[]
+     */
+    protected function criteria_of(int $courseid): array {
+        global $DB;
+        $keys = [];
+        foreach ($DB->get_records('course_completion_criteria', ['course' => $courseid]) as $r) {
+            $keys[] = $r->criteriatype . ':' . ($r->criteriatype == 4 ? $r->moduleinstance : ($r->criteriatype == 6 ?
+                sprintf('%.2f', $r->gradepass) : $r->courseinstance));
+        }
+        sort($keys);
+        return $keys;
+    }
+
+    public function test_the_criterion_of_course_is_type_8_and_the_differ_check_knows_it(): void {
+        $this->resetAfterTest();
+        $this->preventResetByRollback();
+        $this->setAdminUser();
+        $c = $this->completion_course(false);
+        // Apply "concluded the prerequisite course" and ask for exactly that again: Moodle wrote type 8, and nothing differs.
+        $preview = updater::preview($c->course, $this->completion_ops($c, 'replace'), '', null);
+        $this->assertSame((int) restorer::STATUS_FINISHED, (int) $this->apply($preview)->status);
+        $this->assertSame(['8:' . $c->prerequisite->id], $this->criteria_of((int) $c->course->id));
+        $again = updater::preview($c->course, $this->completion_ops($c, 'replace'), '', null);
+        $this->assertNull($this->item($again, 'cs:completion'), 'the same criteria: nothing to do');
+        // The control: another course does differ.
+        $other = $this->getDataGenerator()->create_course(['enablecompletion' => 1]);
+        $ops = $this->criteria_ops([['type' => 8, 'courseinstance' => (int) $other->id]]);
+        $this->assertNotNull($this->item(updater::preview($c->course, $ops, '', null), 'cs:completion'));
+        // Type 7 is the manual conclusion by role, which the plugin does not write: the list is refused.
+        try {
+            $role = $this->criteria_ops([['type' => 7, 'courseinstance' => (int) $c->prerequisite->id]]);
+            updater::preview($c->course, $role, '', null);
+            $this->fail('accepted the type that was a mislabel');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('error:invalidoperations', $e->errorcode);
+        }
+    }
+
+    public function test_criteria_by_activity_and_by_grade_are_applied_where_nobody_concluded(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->preventResetByRollback();
+        $this->setAdminUser();
+        $c = $this->course_with_tracked_pages(3);
+        $ops = $this->criteria_ops([
+            ['type' => 4, 'cmid' => $c->cm[1]],
+            ['type' => 4, 'cmid' => $c->cm[2]],
+            ['type' => 6, 'grade' => 60.5],
+        ], ['aggregation' => 1, 'activityaggregation' => 1]);
+        $preview = updater::preview($c->course, $ops, '', null);
+        $item = $this->item($preview, 'cs:completion');
+        $this->assertSame('update', $item['action']);
+        $this->assertFalse($item['needsdiscard']);
+        $record = $this->apply($preview, false);
+        $this->assertSame((int) restorer::STATUS_FINISHED, (int) $record->status, (string) $record->errormessage);
+        $this->assertSame(['4:' . $c->cm[1], '4:' . $c->cm[2], '6:60.50'], $this->criteria_of((int) $c->course->id));
+        $methods = $DB->get_records_menu('course_completion_aggr_methd', ['course' => $c->course->id], '', 'id, method');
+        $this->assertNotEmpty($methods, 'the aggregation rows are written as the completion page of the course writes them');
+        $again = updater::preview($c->course, $ops, '', null);
+        $this->assertNull($this->item($again, 'cs:completion'), 'asking the same again: nothing to do');
+        // The control: a different activity set differs.
+        $this->assertNotNull($this->item(updater::preview(
+            $c->course,
+            $this->criteria_ops([['type' => 4, 'cmid' => $c->cm[3]]]),
+            '',
+            null
+        ), 'cs:completion'));
+        // The student who does the activities concludes the course by the criteria.
+        $info = new \completion_info(get_course($c->course->id));
+        $modinfo = get_fast_modinfo($c->course->id);
+        $grades = $this->criteria_ops([['type' => 4, 'cmid' => $c->cm[1]], ['type' => 4, 'cmid' => $c->cm[2]]]);
+        $applied = $this->apply(updater::preview($c->course, $grades, '', null));
+        $this->assertSame((int) restorer::STATUS_FINISHED, (int) $applied->status);
+        foreach ([1, 2] as $i) {
+            $info->update_state($modinfo->get_cm($c->cm[$i]), COMPLETION_COMPLETE, $c->student->id);
+        }
+        ob_start();
+        (new \core\task\completion_regular_task())->execute();
+        ob_end_clean();
+        $this->assertSame(1, $DB->count_records_select(
+            'course_completions',
+            'course = ? AND timecompleted IS NOT NULL',
+            [$c->course->id]
+        ));
+    }
+
+    public function test_a_criterion_by_activity_that_cannot_conclude_anyone_is_left_out_with_the_reason(): void {
+        $this->resetAfterTest();
+        $this->preventResetByRollback();
+        $this->setAdminUser();
+        $c = $this->course_with_tracked_pages(2);
+        $untracked = $this->getDataGenerator()->create_module('page', ['course' => $c->course->id, 'completion' => 0]);
+        // First the set the course has: the activity 1.
+        $this->assertSame((int) restorer::STATUS_FINISHED, (int) $this->apply(updater::preview(
+            $c->course,
+            $this->criteria_ops([['type' => 4, 'cmid' => $c->cm[1]]]),
+            '',
+            null
+        ))->status);
+        // An activity without completion tracking never concludes anybody.
+        $ops = $this->criteria_ops([['type' => 4, 'cmid' => $c->cm[1]], ['type' => 4, 'cmid' => (int) $untracked->cmid]]);
+        $preview = updater::preview($c->course, $ops, '', null);
+        $item = $this->item($preview, 'cs:completion');
+        $this->assertSame('skip', $item['action']);
+        $this->assertSame('nocompletion', $item['reason']);
+        $record = $this->apply($preview, false);
+        $this->assertSame((int) restorer::STATUS_FINISHED, (int) $record->status, (string) $record->errormessage);
+        $this->assertSame(['4:' . $c->cm[1]], $this->criteria_of((int) $c->course->id), 'the criteria the course had stay');
+        // The same list turning completion off in the same call for an activity it asks as criterion.
+        $off = $this->ops(['activities' => [['cmid' => $c->cm[2], 'completion' => ['completion' => 0, 'completionview' => 0,
+            'completionexpected' => 0, 'completiongradeitemnumber' => null, 'completionpassgrade' => 0, 'type' => []]]],
+            'coursesettings' => ['completion' => ['choice' => 'replace', 'criteria' => [['type' => 4, 'cmid' => $c->cm[2]]]]]]);
+        $this->assertSame('nocompletion', $this->item(updater::preview($c->course, $off, '', null), 'cs:completion')['reason']);
+        // The control: a criterion on a tracked activity is not left out.
+        $tracked = $this->criteria_ops([['type' => 4, 'cmid' => $c->cm[2]]]);
+        $ok = $this->item(updater::preview($c->course, $tracked, '', null), 'cs:completion');
+        $this->assertSame('update', $ok['action']);
+    }
+
+    public function test_replacing_with_criteria_by_activity_where_somebody_concluded_still_needs_the_confirmation(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->preventResetByRollback();
+        $this->setAdminUser();
+        $c = $this->completion_course(true);
+        $other = $this->getDataGenerator()->create_module('page', ['course' => $c->course->id, 'completion' => 1]);
+        $ops = $this->criteria_ops([['type' => 4, 'cmid' => (int) $other->cmid]]);
+        $preview = updater::preview($c->course, $ops, '', null);
+        $item = $this->item($preview, 'cs:completion');
+        $this->assertSame(1, $item['people']);
+        $this->assertTrue($item['needsdiscard']);
+        try {
+            updater::queue(updater::open_preview($preview['previewid']), false, 180);
+            $this->fail('queued without the confirmation');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('error:discardnotconfirmed', $e->errorcode);
+        }
+        $this->assertSame(1, $DB->count_records_select(
+            'course_completions',
+            'course = ? AND timecompleted IS NOT NULL',
+            [$c->course->id]
+        ));
+        $record = $this->apply($preview, true);
+        $this->assertEquals(1, $record->fullbackup);
+        $this->assertSame(['4:' . $other->cmid], $this->criteria_of((int) $c->course->id));
+    }
+
+    public function test_the_criteria_that_are_not_valid_refuse_the_whole_list(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $c = $this->course_with_tracked_pages(1);
+        $foreign = $this->getDataGenerator()->create_module('page', ['course' => $this->getDataGenerator()->create_course()->id]);
+        $cases = [
+            'foreign activity' => [['type' => 4, 'cmid' => (int) $foreign->cmid]],
+            'activity as text' => [['type' => 4, 'cmid' => (string) $c->cm[1]]],
+            'grade zero' => [['type' => 6, 'grade' => 0]],
+            'grade negative' => [['type' => 6, 'grade' => -5]],
+            'grade as text' => [['type' => 6, 'grade' => '60']],
+            'repeated' => [['type' => 4, 'cmid' => $c->cm[1]], ['type' => 4, 'cmid' => $c->cm[1]]],
+            'two grades' => [['type' => 6, 'grade' => 50], ['type' => 6, 'grade' => 60]],
+            'role (7)' => [['type' => 7]],
+            'a key of another type' => [['type' => 4, 'cmid' => $c->cm[1], 'grade' => 5]],
+            'unknown type' => [['type' => 5, 'cmid' => $c->cm[1]]],
+        ];
+        foreach ($cases as $name => $criteria) {
+            try {
+                updater::preview($c->course, $this->criteria_ops($criteria), '', null);
+                $this->fail('accepted: ' . $name);
+            } catch (\moodle_exception $e) {
+                $this->assertContains($e->errorcode, ['error:invalidoperations', 'error:foreignid'], $name);
+            }
+        }
+        // The control: valid ones are accepted.
+        $valid = $this->criteria_ops([['type' => 4, 'cmid' => $c->cm[1]], ['type' => 6, 'grade' => 60]]);
+        $ok = updater::preview($c->course, $valid, '', null);
+        $this->assertSame('update', $this->item($ok, 'cs:completion')['action']);
     }
 }

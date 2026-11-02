@@ -100,6 +100,25 @@ $capabilities = [
             'manager' => CAP_ALLOW,
         ],
     ],
+    // Read the competency frameworks of the site, the competencies of a framework and the ones linked to a course (1.10.0, issue
+    // 252).
+    'local/miwlab:viewcompetencies' => [
+        'captype' => 'read',
+        'contextlevel' => CONTEXT_COURSE,
+        'archetypes' => [
+            'manager' => CAP_ALLOW,
+        ],
+    ],
+    // Complete a competency framework (it only adds and updates text), and link competencies to a course and its activities, for
+    // the MiwLab (1.10.0, issue 252). Never deletes a framework, a competency or a link.
+    'local/miwlab:managecompetencies' => [
+        'riskbitmask' => RISK_CONFIG,
+        'captype' => 'write',
+        'contextlevel' => CONTEXT_COURSE,
+        'archetypes' => [
+            'manager' => CAP_ALLOW,
+        ],
+    ],
     // List the activity and resource types and the course formats installed on the site (names and versions only).
     'local/miwlab:viewmoduletypes' => [
         'captype' => 'read',

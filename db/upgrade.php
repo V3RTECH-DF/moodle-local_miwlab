@@ -245,5 +245,15 @@ function xmldb_local_miwlab_upgrade($oldversion) {
         \local_miwlab\local\provisioning::ensure_role();
         upgrade_plugin_savepoint(true, 2026102602, 'local', 'miwlab');
     }
+    if ($oldversion < 2026110201) {
+        // 1.10.0: the stamp of the activities (issue 254), the competencies (issue 252), the scales (issue 250), the add-ons in
+        // get_info (issue 246) and the criteria of course completion by activity and by grade in the safe update (issue 247).
+        // No table changes. The role gets the permissions of the competencies (ensure_role gives them); the eight new functions
+        // come
+        // to the "MiwLab (local_miwlab)" service when Moodle reads db/services.php right after this step, so the same key reaches
+        // them.
+        \local_miwlab\local\provisioning::ensure_role();
+        upgrade_plugin_savepoint(true, 2026110201, 'local', 'miwlab');
+    }
     return true;
 }

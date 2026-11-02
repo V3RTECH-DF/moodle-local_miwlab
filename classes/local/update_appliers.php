@@ -271,16 +271,47 @@ class update_appliers {
         global $CFG;
         require_once($CFG->libdir . '/completionlib.php');
         require_once($CFG->dirroot . '/completion/criteria/completion_criteria_course.php');
+        require_once($CFG->dirroot . '/completion/criteria/completion_criteria_activity.php');
+        require_once($CFG->dirroot . '/completion/criteria/completion_criteria_grade.php');
+        require_once($CFG->dirroot . '/completion/completion_aggregation.php');
         $this->journal->remember_completion();
         $completion = new \completion_info(get_course($this->course->id));
         $completion->clear_criteria();
-        $ids = array_map(fn($k) => (int) $k['courseinstance'], $setting['criteria']);
-        if ($ids) {
-            $data = (object) ['id' => $this->course->id, 'criteria_course' => $ids, 'course_aggregation' => $setting['aggregation'],
-                'overall_aggregation' => $setting['aggregation']];
-            $criterion = new \completion_criteria_course();
-            $criterion->update_config($data);
+        $of = function (int $type) use ($setting): array {
+            return array_values(array_filter($setting['criteria'], fn($k) => $k['type'] === $type));
+        };
+        $data = (object) ['id' => $this->course->id, 'overall_aggregation' => $setting['aggregation'],
+            'activity_aggregation' => $setting['activityaggregation'], 'course_aggregation' => $setting['aggregation']];
+        // The same calls the completion page of the course makes (course/completion.php), one criterion class per type.
+        if ($activities = $of(update_operations::CRITERION_ACTIVITY)) {
+            $data->criteria_activity = array_fill_keys(array_column($activities, 'cmid'), 1);
+            (new \completion_criteria_activity())->update_config($data);
         }
+        if ($grades = $of(update_operations::CRITERION_GRADE)) {
+            // Inserted directly: update_config() reads the grade as text in the language of the user.
+            $criterion = new \completion_criteria_grade();
+            $criterion->course = $this->course->id;
+            $criterion->gradepass = $grades[0]['grade'];
+            $criterion->insert();
+        }
+        if ($courses = $of(update_operations::CRITERION_COURSE)) {
+            $data->criteria_course = array_column($courses, 'courseinstance');
+            (new \completion_criteria_course())->update_config($data);
+        }
+        if ($setting['criteria']) {
+            // The aggregation rows are what the completion page writes after the criteria; without them the course has criteria
+            // and no way to combine them. The role one is written as the page does (it is not used: no role criterion).
+            foreach (
+                [[null, $setting['aggregation']], [update_operations::CRITERION_ACTIVITY, $setting['activityaggregation']],
+                    [update_operations::CRITERION_COURSE, $setting['aggregation']], [7, 0]] as [$type, $method]
+            ) {
+                $aggregation = new \completion_aggregation(['course' => $this->course->id, 'criteriatype' => $type]);
+                $aggregation->setMethod($method);
+                $aggregation->save();
+            }
+        }
+        \core\event\course_completion_updated::create(['courseid' => $this->course->id,
+            'context' => \context_course::instance($this->course->id)])->trigger();
     }
 
     /**

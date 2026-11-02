@@ -29,7 +29,13 @@ class get_info extends base {
         'restore', 'restorestatus', 'findcourses', 'completion', 'feedback', 'moduletypes', 'courseformats', 'replace',
         'hidecourse', 'coursestate', 'blocks', 'badges', 'contentbackup', 'certificatetemplates', 'uploadlimits', 'forumtopics',
         'coursesoverview', 'fullbackup', 'safeupdate',
+        // 1.10.0: stamp of the activities (issue 254), competencies (252), scales (250), course completion criteria by activity
+        // and by grade in the safe update (247).
+        'stampactivities', 'findcoursesbystamp', 'scales', 'competencies', 'completioncriteria',
     ];
+
+    /** @var string[] Add-ons of Moodle (components of other developers) whose presence the MiwLab asks. */
+    const ADDONS = ['availability_coursecompleted'];
 
     /**
      * Parameters.
@@ -57,12 +63,37 @@ class get_info extends base {
             'moodleversion' => (string) $CFG->version,
             'moodlerelease' => (string) $CFG->release,
             'features' => self::FEATURES,
+            'competenciesenabled' => (bool) get_config('core_competency', 'enabled'),
+            'addons' => self::addons(),
             'systemcapabilities' => [
                 'restorecourse' => has_capability('local/miwlab:restorecourse', $context),
                 'viewreports' => has_capability('local/miwlab:viewreports', $context),
                 'viewmoduletypes' => has_capability('local/miwlab:viewmoduletypes', $context),
             ],
         ];
+    }
+
+    /**
+     * Whether each add-on the MiwLab asks about is installed, enabled and in which version.
+     *
+     * @return array
+     */
+    protected static function addons(): array {
+        $manager = \core_plugin_manager::instance();
+        $addons = [];
+        foreach (self::ADDONS as $component) {
+            $info = $manager->get_plugin_info($component);
+            // Installed means in the database too: the code can be on disk and waiting for the upgrade.
+            $installed = $info && !empty($info->versiondb);
+            $addons[] = [
+                'component' => $component,
+                'installed' => (bool) $installed,
+                'enabled' => $installed && $info->is_enabled() !== false,
+                'version' => $installed ? (int) $info->versiondb : 0,
+                'release' => $installed ? (string) $info->release : '',
+            ];
+        }
+        return $addons;
     }
 
     /**
@@ -78,6 +109,14 @@ class get_info extends base {
             'moodleversion' => new external_value(PARAM_TEXT, 'Version of Moodle'),
             'moodlerelease' => new external_value(PARAM_TEXT, 'Release of Moodle'),
             'features' => new external_multiple_structure(new external_value(PARAM_ALPHANUMEXT, 'Feature name')),
+            'competenciesenabled' => new external_value(PARAM_BOOL, 'The competencies of Moodle are enabled on the site'),
+            'addons' => new external_multiple_structure(new external_single_structure([
+                'component' => new external_value(PARAM_COMPONENT, 'Component of the add-on'),
+                'installed' => new external_value(PARAM_BOOL, 'Installed in the database (not only on disk)'),
+                'enabled' => new external_value(PARAM_BOOL, 'Installed and enabled'),
+                'version' => new external_value(PARAM_INT, 'Version installed (YYYYMMDDXX); 0 when it is not'),
+                'release' => new external_value(PARAM_RAW, 'Release installed; empty when it is not'),
+            ]), 'Add-ons the MiwLab asks about'),
             'systemcapabilities' => new external_single_structure([
                 'restorecourse' => new external_value(PARAM_BOOL, 'The account holds local/miwlab:restorecourse at site level'),
                 'viewreports' => new external_value(PARAM_BOOL, 'The account holds local/miwlab:viewreports at site level'),

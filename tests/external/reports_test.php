@@ -240,6 +240,34 @@ final class reports_test extends \advanced_testcase {
         }
     }
 
+    public function test_find_courses_flags_a_marker_on_more_than_one_course(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $generator = $this->getDataGenerator();
+        $original = $generator->create_course(['idnumber' => 'miwlab:curso-2:v1']);
+        // The generator refuses a repeated course ID number, as the form does; the web service copy does not (measured in
+        // the copy of a course), so the repetition is written straight.
+        $copy = $generator->create_course(['idnumber' => 'miwlab:curso-2:v1:copia']);
+        $DB->set_field('course', 'idnumber', 'miwlab:curso-2:v1', ['id' => $copy->id]);
+        $alone = $generator->create_course(['idnumber' => 'miwlab:curso-3:v1']);
+        $this->setUser($this->reader());
+
+        $found = base::clean_returnvalue(find_courses::execute_returns(), find_courses::execute('miwlab:curso-2:v1'));
+        $this->assertTrue($found['duplicated']);
+        $this->assertFalse($found['truncated']);
+        $this->assertEqualsCanonicalizing([(int) $original->id, (int) $copy->id], array_column($found['courses'], 'id'));
+        $this->assertSame([true, true], array_column($found['courses'], 'exact'));
+        // The control: a marker on one course alone is not duplicated.
+        $found = find_courses::execute('miwlab:curso-3:v1');
+        $this->assertFalse($found['duplicated']);
+        $this->assertSame([(int) $alone->id], array_column($found['courses'], 'id'));
+        // The prefix finds the course and its repeated-marker sibling (miwlab:curso-2:v1:99): none is exactly the prefix.
+        $generator->create_course(['idnumber' => 'miwlab:curso-2:v1:99']);
+        $found = find_courses::execute('miwlab:curso-2');
+        $this->assertCount(3, $found['courses']);
+        $this->assertSame([false, false, false], array_column($found['courses'], 'exact'));
+    }
+
     public function test_find_courses_by_marker(): void {
         $this->resetAfterTest();
         $generator = $this->getDataGenerator();

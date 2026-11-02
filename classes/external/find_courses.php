@@ -62,14 +62,17 @@ class find_courses extends base {
             'id',
             'id, category, fullname, shortname, idnumber, visible, timecreated',
             0,
-            self::LIMIT
+            self::LIMIT + 1
         );
+        $truncated = count($records) > self::LIMIT;
         $courses = [];
-        foreach ($records as $course) {
+        $count = [];
+        foreach (array_slice($records, 0, self::LIMIT, true) as $course) {
             $context = \context_course::instance($course->id);
             if (!has_capability('local/miwlab:viewreports', $context)) {
                 continue;
             }
+            $count[$course->idnumber] = ($count[$course->idnumber] ?? 0) + 1;
             $courses[] = [
                 'id' => (int) $course->id,
                 'categoryid' => (int) $course->category,
@@ -79,9 +82,13 @@ class find_courses extends base {
                 'visible' => (bool) $course->visible,
                 'url' => (new \moodle_url('/course/view.php', ['id' => $course->id]))->out(false),
                 'timecreated' => (int) $course->timecreated,
+                'exact' => (string) $course->idnumber === $params['marker'],
             ];
         }
-        return ['courses' => $courses];
+        // Moodle does not make a course ID number unique when a course is copied by the web service, so the same marker can be
+        // on more than one course: the list carries all of them (up to the limit), says it, and which are exactly the marker.
+        $duplicated = $count && max($count) > 1;
+        return ['courses' => $courses, 'duplicated' => $duplicated, 'truncated' => $truncated];
     }
 
     /**
@@ -100,7 +107,10 @@ class find_courses extends base {
                 'visible' => new external_value(PARAM_BOOL, 'Whether the course is visible'),
                 'url' => new external_value(PARAM_URL, 'Address of the course'),
                 'timecreated' => new external_value(PARAM_INT, 'When the course was created'),
+                'exact' => new external_value(PARAM_BOOL, 'The course ID number is exactly the marker asked'),
             ])),
+            'duplicated' => new external_value(PARAM_BOOL, 'Two or more courses carry the very same ID number'),
+            'truncated' => new external_value(PARAM_BOOL, 'More courses than the limit exist; the list is the first ones'),
         ]);
     }
 }
