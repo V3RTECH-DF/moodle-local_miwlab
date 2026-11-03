@@ -22,6 +22,9 @@ namespace local_miwlab\external;
  *
  * Only what the scale is: id, name, items and who owns it. No grade, no person.
  *
+ * 1.10.1: also `scale`, the text of the scale exactly as Moodle stores it (the items trimmed in `items` lose the spaces after the commas, and when a
+ * course is restored Moodle reuses the scale of the site only when the text is identical, so "Bad, Good, Great" is not "Bad,Good,Great").
+ *
  * @package    local_miwlab
  * @copyright  2026 V3RTECH TECNOLOGIA, CONSULTORIA E INOVACAO LTDA <suporte@v3rtech.com.br>
  * @license    https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -71,6 +74,7 @@ class get_scales extends base {
                 'courseid' => (int) $scale->courseid,
                 'name' => format_string($scale->name, true, ['context' => $context]),
                 'items' => $items,
+                'scale' => (string) $scale->scale,
                 'itemcount' => count($items),
                 'description' => trim(html_to_text(
                     format_text((string) $scale->description, (int) $scale->descriptionformat, ['context' => $context]),
@@ -94,6 +98,11 @@ class get_scales extends base {
                 'courseid' => new external_value(PARAM_INT, 'The course that owns it; 0: the site'),
                 'name' => new external_value(PARAM_TEXT, 'Name'),
                 'items' => new external_multiple_structure(new external_value(PARAM_TEXT, 'Item'), 'The items, from the lowest'),
+                'scale' => new external_value(
+                    PARAM_RAW,
+                    'The text of the scale exactly as stored (items separated by commas, with the spaces typed), 1.10.1',
+                    VALUE_OPTIONAL
+                ),
                 'itemcount' => new external_value(PARAM_INT, 'How many items'),
                 'description' => new external_value(PARAM_TEXT, 'Description, as text'),
             ])),

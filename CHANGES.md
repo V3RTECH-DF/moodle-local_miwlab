@@ -1,5 +1,14 @@
 # Changes
 
+## 1.10.1 (2026110301) — the text of the scale, exactly as Moodle stores it
+
+- **`local_miwlab_get_scales` also returns `scale`**: the text of each scale untouched (`scale.scale`), with the spaces typed after the commas. `items`
+  keeps the trimmed items, so a client that reads only `items` is not affected; `scale` is optional in the returned structure (1.10.0 does not have it).
+  Why: when a course is restored Moodle reuses a scale of the site only if the text is identical, and a scale written "Bad, Good, Great" is not
+  "Bad,Good,Great"; a client that rebuilt the text from `items` made Moodle create a copy of the scale in the course (issue 250).
+- No table changes, no new function, no new permission: the upgrade only moves the version, and the same key reaches it.
+- Privacy: nothing new is stored; the text of a scale is data of Moodle itself.
+
 ## 1.10.0 (2026110201) — stamp of the activities, competencies, scales and course completion in the safe update
 
 - **Stamp of the activities, to recognise the copies of a course** (`local_miwlab_stamp_activities`, `local_miwlab_find_courses_by_stamp`).

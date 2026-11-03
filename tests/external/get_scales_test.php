@@ -61,6 +61,23 @@ final class get_scales_test extends \advanced_testcase {
         $this->assertArrayNotHasKey('Da turma', $byname, 'the scale of a course is not a scale of the site');
     }
 
+    public function test_returns_the_text_of_the_scale_exactly_as_stored(): void {
+        $this->resetAfterTest();
+        $generator = $this->getDataGenerator();
+        $generator->create_scale(['name' => 'Com espacos', 'scale' => 'Ruim, Bom, Ótimo']);
+        $generator->create_scale(['name' => 'Colada', 'scale' => 'Nao,Sim']);
+        $this->setUser($this->account(['local/miwlab:viewmoduletypes']));
+
+        $site = base::clean_returnvalue(get_scales::execute_returns(), get_scales::execute());
+        $byname = array_column($site['scales'], null, 'name');
+        // The text is what Moodle compares when it restores a course, so it comes untouched (with the spaces after the commas)...
+        $this->assertSame('Ruim, Bom, Ótimo', $byname['Com espacos']['scale']);
+        // ... while the items stay trimmed, as 1.10.0 gave them (a client that reads only the items is not affected).
+        $this->assertSame(['Ruim', 'Bom', 'Ótimo'], $byname['Com espacos']['items']);
+        // The control: a scale written without spaces comes the same, so the field is the text and not a rewritten one.
+        $this->assertSame('Nao,Sim', $byname['Colada']['scale']);
+    }
+
     public function test_the_scales_of_a_course_come_when_the_course_is_asked_and_readable(): void {
         $this->resetAfterTest();
         $generator = $this->getDataGenerator();

@@ -255,5 +255,10 @@ function xmldb_local_miwlab_upgrade($oldversion) {
         \local_miwlab\local\provisioning::ensure_role();
         upgrade_plugin_savepoint(true, 2026110201, 'local', 'miwlab');
     }
+    if ($oldversion < 2026110301) {
+        // 1.10.1: local_miwlab_get_scales also returns the text of each scale as Moodle stores it (the field "scale"). No table
+        // changes, no new function and no new permission: the same key reaches it.
+        upgrade_plugin_savepoint(true, 2026110301, 'local', 'miwlab');
+    }
     return true;
 }

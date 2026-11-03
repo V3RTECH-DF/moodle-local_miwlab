@@ -95,7 +95,8 @@ With that token, the MiwLab uses the plugin to do ten things Moodle core web ser
    `local_miwlab_get_course_competencies` reads those links. Everything goes through the competency API of Moodle. It only adds: it never
    deletes, moves or re-scales a framework or a competency and never removes or changes a link that exists. Learning plans are not touched.
 14. **Scales** (1.10.0): `local_miwlab_get_scales` lists the grading scales of the site (and of a course), with their items, for activities
-   that are graded by a scale.
+   that are graded by a scale. From 1.10.1 each scale also carries `scale`, its text exactly as Moodle stores it, with the spaces typed after the
+   commas: Moodle reuses a scale of the site when restoring a course only if the text is identical, and `items` (trimmed) cannot rebuild it.
 15. **Detection** (1.10.0): `local_miwlab_get_info` also says whether the competencies of Moodle are enabled and whether the add-on
    `availability_coursecompleted` ("Restriction by course completion") is installed and in which version.
 
@@ -660,10 +661,11 @@ Needs `local/miwlab:viewmoduletypes`. The grading scales of the site (`courseid`
 
 ```
 { "scales": [ { "id": 4, "courseid": 0, "name": "Estrelas", "items": ["Uma estrela", "Duas estrelas", "Tres estrelas"],
-                "itemcount": 3, "description": "" } ] }
+                "scale": "Uma estrela, Duas estrelas,Tres estrelas", "itemcount": 3, "description": "" } ] }
 ```
 
-The items go from the lowest to the highest.
+The items go from the lowest to the highest. `scale` (1.10.1, optional: absent in 1.10.0) is the text of the scale as Moodle stores it, untouched
+(`items` is that text split at the commas and trimmed). A client that reads only `items` keeps working.
 
 ### local_miwlab_get_competency_frameworks (1.10.0)
 
