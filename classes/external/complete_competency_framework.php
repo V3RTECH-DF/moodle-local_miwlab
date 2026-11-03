@@ -60,12 +60,26 @@ class complete_competency_framework extends base {
                     VALUE_DEFAULT,
                     ''
                 ),
+                'rule' => new external_value(
+                    PARAM_ALPHA,
+                    'For a competency with daughters: all (achieved when all the children are; the default) or any (achieved when '
+                        . 'any child is)',
+                    VALUE_DEFAULT,
+                    'all'
+                ),
             ])),
             'parentrule' => new external_value(
                 PARAM_BOOL,
                 'A competency with daughters in the list and no rule gets "achieved when all the children are"',
                 VALUE_DEFAULT,
                 1
+            ),
+            'moveparents' => new external_value(
+                PARAM_BOOL,
+                'A competency whose ID number starts with miwlab: that sits under another one of the MiwLab is moved under the '
+                    . 'parent the list says (1.10.2); nothing of the organisation is moved',
+                VALUE_DEFAULT,
+                0
             ),
         ]);
     }
@@ -76,12 +90,19 @@ class complete_competency_framework extends base {
      * @param array $framework
      * @param array $competencies
      * @param bool $parentrule
+     * @param bool $moveparents
      * @return array
      */
-    public static function execute(array $framework, array $competencies, bool $parentrule = true): array {
+    public static function execute(
+        array $framework,
+        array $competencies,
+        bool $parentrule = true,
+        bool $moveparents = false
+    ): array {
         $params = self::validate_parameters(
             self::execute_parameters(),
-            ['framework' => $framework, 'competencies' => $competencies, 'parentrule' => $parentrule]
+            ['framework' => $framework, 'competencies' => $competencies, 'parentrule' => $parentrule,
+                'moveparents' => $moveparents]
         );
         $context = \context_system::instance();
         self::validate_context($context);
@@ -89,7 +110,8 @@ class complete_competency_framework extends base {
         $result = \local_miwlab\local\competencies::complete_framework(
             $params['framework'],
             $params['competencies'],
-            (bool) $params['parentrule']
+            (bool) $params['parentrule'],
+            (bool) $params['moveparents']
         );
         $count = function (string $action) use ($result): int {
             return count(array_filter($result['competencies'], fn($c) => $c['action'] === $action));
@@ -112,9 +134,13 @@ class complete_competency_framework extends base {
                 'action' => new external_value(PARAM_ALPHA, 'created, updated, unchanged or skipped'),
                 'reason' => new external_value(
                     PARAM_ALPHANUMEXT,
-                    'invalid, duplicated, parentnotfound (skipped) or parentkept (the parent differs and was not moved)'
+                    'invalid, duplicated, parentnotfound (skipped), parentkept (the parent differs and was not moved) or '
+                        . 'parentmoved (moved under the parent asked)'
                 ),
-                'rule' => new external_value(PARAM_ALPHA, 'For a mother competency: set, kept (has another rule) or empty'),
+                'rule' => new external_value(
+                    PARAM_ALPHA,
+                    'For a mother competency: set, updated (a rule of the MiwLab replaced), kept (has another rule) or empty'
+                ),
             ])),
             'created' => new external_value(PARAM_INT, 'How many competencies were created'),
             'updated' => new external_value(PARAM_INT, 'How many had the text updated'),

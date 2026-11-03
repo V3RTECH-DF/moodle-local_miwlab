@@ -231,6 +231,263 @@ final class competencies_test extends \advanced_testcase {
         );
     }
 
+    /**
+     * The shape of the competency "per course" the MiwLab builds under the competency of a reference (issue 252, option B): a
+     * reference competency (any), a level per course (all) and the skills of each course under its level.
+     *
+     * @param string[] $courses The course ids to build levels for.
+     * @return array[] framework, items
+     */
+    protected function reference_items(array $courses): array {
+        $items = [['idnumber' => 'miwlab:ref:com', 'shortname' => 'Comunicar', 'rule' => 'any']];
+        foreach ($courses as $course) {
+            $items[] = ['idnumber' => "miwlab:$course:r:C01", 'shortname' => 'Comunicar neste curso',
+                'parentidnumber' => 'miwlab:ref:com'];
+            foreach (['H1', 'H2'] as $skill) {
+                $items[] = ['idnumber' => "miwlab:$course:h:$skill", 'shortname' => "Habilidade $skill",
+                    'parentidnumber' => "miwlab:$course:r:C01"];
+            }
+        }
+        return [['idnumber' => 'miwlab-ref-x', 'shortname' => 'Referencial X'], $items];
+    }
+
+    public function test_a_mother_with_the_rule_any_is_achieved_when_any_child_is(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->preventResetByRollback();
+        $this->default_scale();
+        set_config('enablecompletion', 1);
+        $this->setUser($this->key_account());
+        [$framework, $items] = $this->reference_items(['k1', 'k2']);
+        $result = $this->clean(complete_competency_framework::execute($framework, $items));
+        $ids = array_column($result['competencies'], 'id', 'idnumber');
+        $rules = array_column($result['competencies'], 'rule', 'idnumber');
+        $this->assertSame('set', $rules['miwlab:ref:com']);
+        $this->assertSame('set', $rules['miwlab:k1:r:C01']);
+        $reference = $DB->get_record('competency', ['id' => $ids['miwlab:ref:com']]);
+        $this->assertSame(\core_competency\competency_rule_points::class, $reference->ruletype);
+        $this->assertEquals(competency::OUTCOME_COMPLETE, $reference->ruleoutcome);
+        $config = json_decode($reference->ruleconfig, true);
+        $this->assertSame(1, $config['base']['points']);
+        $this->assertEqualsCanonicalizing(
+            [(int) $ids['miwlab:k1:r:C01'], (int) $ids['miwlab:k2:r:C01']],
+            array_column($config['competencies'], 'id')
+        );
+        $this->assertSame(
+            \core_competency\competency_rule_all::class,
+            $DB->get_field('competency', 'ruletype', ['id' => $ids['miwlab:k1:r:C01']]),
+            'the level of a course needs all of its skills'
+        );
+        // Two courses, one student: the one who did only the first course (both skills) reaches the level, the reference and
+        // nothing of the second course; the one who did nothing reaches nothing.
+        $generator = $this->getDataGenerator();
+        $course = $generator->create_course(['enablecompletion' => 1]);
+        $pages = [];
+        foreach ([1, 2] as $i) {
+            $pages[$i] = $generator->create_module('page', ['course' => $course->id, 'name' => 'P' . $i, 'completion' => 1]);
+        }
+        set_course_competencies::execute((int) $course->id, [
+            ['competencyid' => $ids['miwlab:k1:h:H1'], 'cmids' => [(int) $pages[1]->cmid]],
+            ['competencyid' => $ids['miwlab:k1:h:H2'], 'cmids' => [(int) $pages[2]->cmid]],
+        ]);
+        $doer = $generator->create_and_enrol($course, 'student');
+        $idle = $generator->create_and_enrol($course, 'student');
+        $info = new \completion_info(get_course($course->id));
+        $reached = function (\stdClass $user, string $idnumber) use ($DB, $ids, $course): bool {
+            // Achieved in the course (the skills) or in the site (a mother that is not linked to the course is achieved there).
+            return (bool) $DB->get_field(
+                'competency_usercompcourse',
+                'proficiency',
+                ['userid' => $user->id, 'courseid' => $course->id, 'competencyid' => $ids[$idnumber]]
+            ) || (bool) $DB->get_field(
+                'competency_usercomp',
+                'proficiency',
+                ['userid' => $user->id, 'competencyid' => $ids[$idnumber]]
+            );
+        };
+        $this->setUser($doer);
+        $info->update_state(get_fast_modinfo($course->id)->get_cm($pages[1]->cmid), COMPLETION_COMPLETE, $doer->id);
+        $this->assertTrue($reached($doer, 'miwlab:k1:h:H1'));
+        $this->assertFalse($reached($doer, 'miwlab:k1:r:C01'), 'control: the level of the course needs both skills');
+        $this->assertFalse($reached($doer, 'miwlab:ref:com'), 'control: not before the level');
+        $info->update_state(get_fast_modinfo($course->id)->get_cm($pages[2]->cmid), COMPLETION_COMPLETE, $doer->id);
+        $this->assertTrue($reached($doer, 'miwlab:k1:r:C01'));
+        $this->assertTrue($reached($doer, 'miwlab:ref:com'), 'the reference is achieved with the level of one course only');
+        $this->assertFalse($reached($doer, 'miwlab:k2:r:C01'), 'control: the level of the other course is not');
+        $this->assertFalse($reached($idle, 'miwlab:ref:com'), 'control: who did nothing reaches nothing');
+        $this->assertFalse($reached($idle, 'miwlab:k1:r:C01'));
+    }
+
+    public function test_a_new_level_brings_the_points_rule_up_to_date_and_asking_again_changes_nothing(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->default_scale();
+        $this->setUser($this->key_account());
+        [$framework, $items] = $this->reference_items(['k1']);
+        $first = $this->clean(complete_competency_framework::execute($framework, $items));
+        $ids = array_column($first['competencies'], 'id', 'idnumber');
+        [, $both] = $this->reference_items(['k1', 'k2']);
+        $second = $this->clean(complete_competency_framework::execute($framework, $both));
+        $rules = array_column($second['competencies'], 'rule', 'idnumber');
+        $this->assertSame('set', $rules['miwlab:ref:com'], 'Moodle took the rule away when the level came; it is set again');
+        $config = json_decode($DB->get_field('competency', 'ruleconfig', ['id' => $ids['miwlab:ref:com']]), true);
+        $this->assertCount(2, $config['competencies']);
+        $again = $this->clean(complete_competency_framework::execute($framework, $both));
+        $this->assertSame('kept', array_column($again['competencies'], 'rule', 'idnumber')['miwlab:ref:com']);
+        $this->assertSame(0, $again['created']);
+        $this->assertSame(0, $again['updated']);
+        // The rule of all the children that 1.10.1 set is replaced by the new one, and only because the competency is the MiwLab's.
+        $DB->set_field('competency', 'ruletype', \core_competency\competency_rule_all::class, ['id' => $ids['miwlab:ref:com']]);
+        $DB->set_field('competency', 'ruleconfig', null, ['id' => $ids['miwlab:ref:com']]);
+        $replaced = $this->clean(complete_competency_framework::execute($framework, $both));
+        $this->assertSame('updated', array_column($replaced['competencies'], 'rule', 'idnumber')['miwlab:ref:com']);
+        $this->assertSame(
+            \core_competency\competency_rule_points::class,
+            $DB->get_field('competency', 'ruletype', ['id' => $ids['miwlab:ref:com']])
+        );
+        // A points rule of the MiwLab that lists fewer levels than there are is brought up to date.
+        $stale = json_encode(['base' => ['points' => 1],
+            'competencies' => [['id' => (int) $ids['miwlab:k1:r:C01'], 'points' => 1, 'required' => 0]]]);
+        $DB->set_field('competency', 'ruleconfig', $stale, ['id' => $ids['miwlab:ref:com']]);
+        $fresh = $this->clean(complete_competency_framework::execute($framework, $both));
+        $this->assertSame('updated', array_column($fresh['competencies'], 'rule', 'idnumber')['miwlab:ref:com']);
+        $config = json_decode($DB->get_field('competency', 'ruleconfig', ['id' => $ids['miwlab:ref:com']]), true);
+        $this->assertCount(2, $config['competencies']);
+    }
+
+    public function test_the_rule_any_never_goes_on_a_competency_the_organisation_made_nor_over_its_rule(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->default_scale();
+        $generator = $this->getDataGenerator()->get_plugin_generator('core_competency');
+        $scale = $this->getDataGenerator()->create_scale(['scale' => 'A,B,C']);
+        $framework = $generator->create_framework(['idnumber' => 'minha', 'shortname' => 'Da organizacao',
+            'scaleid' => $scale->id]);
+        $own = $generator->create_competency(['idnumber' => 'minha-mae', 'competencyframeworkid' => $framework->get('id')]);
+        $generator->create_competency(['idnumber' => 'minha-filha', 'competencyframeworkid' => $framework->get('id'),
+            'parentid' => $own->get('id')]);
+        $ours = $generator->create_competency(['idnumber' => 'miwlab:ref:org', 'competencyframeworkid' => $framework->get('id')]);
+        $generator->create_competency(['idnumber' => 'miwlab:k:r:C', 'competencyframeworkid' => $framework->get('id'),
+            'parentid' => $ours->get('id')]);
+        // The organisation put its own rule (the same class, another outcome) on a competency of the MiwLab: it stays.
+        $DB->set_field('competency', 'ruletype', \core_competency\competency_rule_all::class, ['id' => $ours->get('id')]);
+        $DB->set_field('competency', 'ruleoutcome', competency::OUTCOME_RECOMMEND, ['id' => $ours->get('id')]);
+        $this->setUser($this->key_account());
+        $result = $this->clean(complete_competency_framework::execute(
+            ['idnumber' => 'minha'],
+            [
+                ['idnumber' => 'minha-mae', 'rule' => 'any'],
+                ['idnumber' => 'minha-filha', 'parentidnumber' => 'minha-mae'],
+                ['idnumber' => 'miwlab:ref:org', 'rule' => 'any'],
+                ['idnumber' => 'miwlab:k:r:C', 'parentidnumber' => 'miwlab:ref:org'],
+            ]
+        ));
+        $rules = array_column($result['competencies'], 'rule', 'idnumber');
+        $this->assertSame('kept', $rules['minha-mae']);
+        $this->assertEmpty(
+            $DB->get_field('competency', 'ruletype', ['id' => $own->get('id')]),
+            'no rule was put on the organisation'
+        );
+        $this->assertSame('kept', $rules['miwlab:ref:org']);
+        $this->assertEquals(competency::OUTCOME_RECOMMEND, $DB->get_field('competency', 'ruleoutcome', ['id' => $ours->get('id')]));
+    }
+
+    public function test_moves_only_what_the_miwlab_arranged_and_only_when_asked(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->default_scale();
+        $this->setUser($this->key_account());
+        // The design of 1.10.1: the skills right under the reference competency.
+        $old = [
+            ['idnumber' => 'miwlab:ref:com', 'shortname' => 'Comunicar'],
+            ['idnumber' => 'miwlab:k1:h:H1', 'shortname' => 'H1', 'parentidnumber' => 'miwlab:ref:com'],
+            ['idnumber' => 'miwlab:k1:h:H2', 'shortname' => 'H2', 'parentidnumber' => 'miwlab:ref:com'],
+            ['idnumber' => 'feita-pela-org', 'shortname' => 'Da org', 'parentidnumber' => 'miwlab:ref:com'],
+            // A skill of the MiwLab that the organisation put under a competency of its own: the MiwLab did not arrange that.
+            ['idnumber' => 'miwlab:k1:h:H3', 'shortname' => 'H3', 'parentidnumber' => 'feita-pela-org'],
+        ];
+        $first = $this->clean(complete_competency_framework::execute(['idnumber' => 'miwlab-ref-x', 'shortname' => 'X'], $old));
+        $ids = array_column($first['competencies'], 'id', 'idnumber');
+        $this->assertSame(
+            \core_competency\competency_rule_all::class,
+            $DB->get_field('competency', 'ruletype', ['id' => $ids['miwlab:ref:com']])
+        );
+        [$framework, $items] = $this->reference_items(['k1']);
+        $items[] = ['idnumber' => 'feita-pela-org', 'shortname' => 'Da org', 'parentidnumber' => 'miwlab:k1:r:C01'];
+        $items[] = ['idnumber' => 'miwlab:k1:h:H3', 'shortname' => 'H3', 'parentidnumber' => 'miwlab:k1:r:C01'];
+        // Without asking: nothing moves, and it says so.
+        $kept = $this->clean(complete_competency_framework::execute($framework, $items));
+        $byid = array_column($kept['competencies'], null, 'idnumber');
+        $this->assertSame('parentkept', $byid['miwlab:k1:h:H1']['reason']);
+        $this->assertEquals($ids['miwlab:ref:com'], $DB->get_field('competency', 'parentid', ['id' => $ids['miwlab:k1:h:H1']]));
+        // Asking: the skills of the MiwLab go under the level; the one the organisation made stays where it is.
+        $moved = $this->clean(complete_competency_framework::execute($framework, $items, true, true));
+        $byid = array_column($moved['competencies'], null, 'idnumber');
+        $this->assertSame('parentmoved', $byid['miwlab:k1:h:H1']['reason']);
+        $this->assertSame('updated', $byid['miwlab:k1:h:H1']['action']);
+        $this->assertSame('parentkept', $byid['feita-pela-org']['reason'], 'what the organisation made is never moved');
+        $this->assertSame(
+            'parentkept',
+            $byid['miwlab:k1:h:H3']['reason'],
+            'nor what the organisation arranged, even if the id is ours'
+        );
+        $this->assertEquals($ids['feita-pela-org'], $DB->get_field('competency', 'parentid', ['id' => $ids['miwlab:k1:h:H3']]));
+        $level = $DB->get_record('competency', ['idnumber' => 'miwlab:k1:r:C01']);
+        $this->assertEquals($level->id, $DB->get_field('competency', 'parentid', ['id' => $ids['miwlab:k1:h:H1']]));
+        $this->assertEquals($level->id, $DB->get_field('competency', 'parentid', ['id' => $ids['miwlab:k1:h:H2']]));
+        $this->assertEquals($ids['miwlab:ref:com'], $DB->get_field('competency', 'parentid', ['id' => $ids['feita-pela-org']]));
+        $this->assertSame(
+            \core_competency\competency_rule_all::class,
+            $level->ruletype,
+            'the level has the rule of all its skills'
+        );
+        $this->assertSame(
+            \core_competency\competency_rule_points::class,
+            $DB->get_field('competency', 'ruletype', ['id' => $ids['miwlab:ref:com']]),
+            'the reference now needs any level'
+        );
+        // Nothing was deleted and asking again changes nothing.
+        $this->assertSame(6, $DB->count_records('competency', ['competencyframeworkid' => $first['frameworkid']]));
+        $again = $this->clean(complete_competency_framework::execute($framework, $items, true, true));
+        $this->assertSame(0, $again['created']);
+        $this->assertSame(0, $again['updated']);
+    }
+
+    public function test_the_mother_a_skill_moved_away_from_gets_its_rule_back(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->default_scale();
+        $this->setUser($this->key_account());
+        $framework = ['idnumber' => 'miwlab-ref-y', 'shortname' => 'Y'];
+        $first = $this->clean(complete_competency_framework::execute($framework, [
+            ['idnumber' => 'miwlab:p', 'shortname' => 'P'],
+            ['idnumber' => 'miwlab:x', 'shortname' => 'X', 'parentidnumber' => 'miwlab:p'],
+            ['idnumber' => 'miwlab:y', 'shortname' => 'Y', 'parentidnumber' => 'miwlab:p'],
+            ['idnumber' => 'miwlab:n', 'shortname' => 'N'],
+        ]));
+        $ids = array_column($first['competencies'], 'id', 'idnumber');
+        $this->assertSame(
+            \core_competency\competency_rule_all::class,
+            $DB->get_field('competency', 'ruletype', ['id' => $ids['miwlab:p']])
+        );
+        // The list does not mention P at all: it only moves X under N. Moodle takes the rule of P away when X leaves; the
+        // plugin puts it back.
+        $moved = $this->clean(complete_competency_framework::execute(
+            ['idnumber' => 'miwlab-ref-y'],
+            [['idnumber' => 'miwlab:x', 'parentidnumber' => 'miwlab:n']],
+            true,
+            true
+        ));
+        $byid = array_column($moved['competencies'], null, 'idnumber');
+        $this->assertSame('parentmoved', $byid['miwlab:x']['reason']);
+        $this->assertSame(
+            \core_competency\competency_rule_all::class,
+            $DB->get_field('competency', 'ruletype', ['id' => $ids['miwlab:p']]),
+            'P still has a child (Y), so it has its rule again'
+        );
+        $this->assertSame('set', $byid['miwlab:p']['rule']);
+    }
+
     public function test_skips_what_cannot_be_made_and_says_why(): void {
         $this->resetAfterTest();
         $this->default_scale();

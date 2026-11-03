@@ -249,10 +249,14 @@ class competencies {
      * @param array $framework [idnumber, shortname, description, scaleid, categoryid]
      * @param array[] $items Each [idnumber, shortname, description, parentidnumber]; the order does not matter.
      * @param bool $parentrule Whether a competency that has daughters in the list and no rule gets the rule "all children
-     *   achieved, then achieved" (Moodle takes the rule of a mother away when a daughter is added, so it is set after).
+     *   achieved, then achieved" (Moodle takes the rule of a mother away when a daughter is added, so it is set after). An item
+     *   with `rule` = `any` (1.10.2) gets "achieved when ANY child is" instead (a points rule: each child is worth one point and
+     *   one point is needed).
+     * @param bool $moveparents Whether a competency made by the MiwLab (ID number `miwlab:`) that sits under another competency
+     *   made by the MiwLab is moved under the parent the list says (1.10.2). Nothing of the organisation is ever moved.
      * @return array [frameworkid, frameworkaction, competencies => [[idnumber, id, action, reason, rule]]]
      */
-    public static function complete_framework(array $framework, array $items, bool $parentrule): array {
+    public static function complete_framework(array $framework, array $items, bool $parentrule, bool $moveparents = false): array {
         global $DB;
         self::require_enabled();
         if (count($items) > self::MAX_COMPETENCIES) {
@@ -311,7 +315,7 @@ class competencies {
                 $frameworkid = (int) $created->get('id');
                 $frameworkaction = 'created';
             }
-            $results = self::complete_competencies($frameworkid, $items, $parentrule);
+            $results = self::complete_competencies($frameworkid, $items, $parentrule, $moveparents);
         } catch (\Throwable $e) {
             $transaction->rollback($e);
         }
@@ -325,9 +329,10 @@ class competencies {
      * @param int $frameworkid
      * @param array[] $items
      * @param bool $parentrule
+     * @param bool $moveparents
      * @return array[]
      */
-    protected static function complete_competencies(int $frameworkid, array $items, bool $parentrule): array {
+    protected static function complete_competencies(int $frameworkid, array $items, bool $parentrule, bool $moveparents): array {
         global $DB;
         $known = [];
         foreach ($DB->get_records('competency', ['competencyframeworkid' => $frameworkid]) as $row) {
@@ -336,6 +341,8 @@ class competencies {
         $results = [];
         $pending = [];
         $seen = [];
+        $modes = [];
+        $movedfrom = [];
         foreach ($items as $item) {
             $id = trim((string) $item['idnumber']);
             $name = trim((string) ($item['shortname'] ?? ''));
@@ -353,6 +360,7 @@ class competencies {
             } else {
                 $seen[$id] = true;
                 $pending[$id] = $item + ['parentidnumber' => ''];
+                $modes[$id] = (($item['rule'] ?? 'all') === 'any') ? 'any' : 'all';
             }
         }
         // A competency waits until its parent is there; the loop ends when a round does nothing.
@@ -365,7 +373,7 @@ class competencies {
                 }
                 $progress = true;
                 unset($pending[$id]);
-                $results[] = self::complete_competency($frameworkid, $id, $item, $parent, $known);
+                $results[] = self::complete_competency($frameworkid, $id, $item, $parent, $known, $moveparents, $movedfrom);
             }
             if (!$progress) {
                 break;
@@ -382,8 +390,14 @@ class competencies {
                     $mothers[$parent] = true;
                 }
             }
+            // A mother a daughter was moved away from lost its rule (Moodle resets it), so it is looked at again.
+            foreach (array_keys($movedfrom) as $parent) {
+                if (isset($known[$parent])) {
+                    $mothers[$parent] = true;
+                }
+            }
             foreach (array_keys($mothers) as $parent) {
-                $rule = self::set_mother_rule((int) $known[$parent]->id);
+                $rule = self::set_mother_rule((int) $known[$parent]->id, $modes[$parent] ?? 'all');
                 $at = array_search($parent, array_column($results, 'idnumber'), true);
                 if ($at !== false) {
                     $results[$at]['rule'] = $rule;
@@ -406,9 +420,19 @@ class competencies {
      * @param array $item
      * @param string $parent ID number of the parent, '' for none.
      * @param stdClass[] $known The competencies of the framework by ID number; this one is added when created.
+     * @param bool $moveparents Whether a competency of the MiwLab may be moved under the parent the list says.
+     * @param bool[] $movedfrom The ID numbers of the parents a competency was moved away from (filled here).
      * @return array
      */
-    protected static function complete_competency(int $frameworkid, string $id, array $item, string $parent, array &$known): array {
+    protected static function complete_competency(
+        int $frameworkid,
+        string $id,
+        array $item,
+        string $parent,
+        array &$known,
+        bool $moveparents = false,
+        array &$movedfrom = []
+    ): array {
         $name = trim((string) ($item['shortname'] ?? ''));
         $description = (string) ($item['description'] ?? '');
         if (isset($known[$id])) {
@@ -416,8 +440,20 @@ class competencies {
             $reason = '';
             $parentid = $parent === '' ? 0 : (int) $known[$parent]->id;
             if ((int) $row->parentid !== $parentid) {
-                // A competency is never moved: the framework is shared.
-                $reason = 'parentkept';
+                $oldparent = (int) $row->parentid === 0 ? null : self::idnumber_of((int) $row->parentid, $known);
+                if (
+                    $moveparents && $parentid > 0 && self::is_ours($id) && $oldparent !== null && self::is_ours($oldparent)
+                ) {
+                    // Only what the MiwLab itself arranged is rearranged (an ID number `miwlab:` under a parent `miwlab:`); what
+                    // the organisation made or moved stays where it is: the framework is shared.
+                    \core_competency\api::set_parent_competency((int) $row->id, $parentid);
+                    $movedfrom[$oldparent] = true;
+                    $row->parentid = $parentid;
+                    $reason = 'parentmoved';
+                } else {
+                    // A competency is never moved: the framework is shared.
+                    $reason = 'parentkept';
+                }
             }
             $change = ['id' => (int) $row->id];
             if ($name !== '' && $name !== (string) $row->shortname) {
@@ -433,7 +469,8 @@ class competencies {
                 }
                 return ['idnumber' => $id, 'id' => (int) $row->id, 'action' => 'updated', 'reason' => $reason, 'rule' => ''];
             }
-            return ['idnumber' => $id, 'id' => (int) $row->id, 'action' => 'unchanged', 'reason' => $reason, 'rule' => ''];
+            return ['idnumber' => $id, 'id' => (int) $row->id,
+                'action' => $reason === 'parentmoved' ? 'updated' : 'unchanged', 'reason' => $reason, 'rule' => ''];
         }
         $created = api::create_competency((object) [
             'shortname' => $name,
@@ -448,28 +485,108 @@ class competencies {
     }
 
     /**
-     * Gives a mother competency the rule "all children achieved, then achieved", when it has no rule. A rule of the organisation
-     * (any other, or the same with another outcome) stays.
+     * Whether a competency was made by the MiwLab (its ID number starts with `miwlab:`).
+     *
+     * @param string $idnumber
+     * @return bool
+     */
+    protected static function is_ours(string $idnumber): bool {
+        return strpos($idnumber, 'miwlab:') === 0;
+    }
+
+    /**
+     * The ID number of a competency by its id, among the ones known of the framework.
+     *
+     * @param int $id
+     * @param stdClass[] $known By ID number.
+     * @return string|null
+     */
+    protected static function idnumber_of(int $id, array $known): ?string {
+        foreach ($known as $idnumber => $row) {
+            if ((int) $row->id === $id) {
+                return (string) $idnumber;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Gives a mother competency its rule: "all children achieved, then achieved" (mode `all`), or "any child achieved" (mode `any`,
+     * a points rule: every child is worth one point and one is enough). A mother with no rule gets the one asked (for `any`, only a
+     * mother made by the MiwLab). A rule of the organisation (any other, or the same with another outcome) stays; the rule the
+     * MiwLab itself set on a competency of the MiwLab is the only one that is replaced, when the mode asked is the other one, and
+     * a points rule is brought up to date with the children there are now.
      *
      * @param int $competencyid
-     * @return string set, kept (it has the rule already, or another one) or '' (nothing to set: it has no children)
+     * @param string $mode all or any
+     * @return string set, updated (a rule of the MiwLab replaced or brought up to date), kept (it has the rule already, or another
+     *   one that is not ours) or '' (nothing to set: it has no children)
      */
-    protected static function set_mother_rule(int $competencyid): string {
+    protected static function set_mother_rule(int $competencyid, string $mode = 'all'): string {
         global $DB;
         $row = $DB->get_record('competency', ['id' => $competencyid], '*', MUST_EXIST);
-        if (!$DB->record_exists('competency', ['parentid' => $competencyid])) {
+        $children = $DB->get_records('competency', ['parentid' => $competencyid], 'id', 'id');
+        if (!$children) {
             return '';
         }
+        $all = \core_competency\competency_rule_all::class;
+        $points = \core_competency\competency_rule_points::class;
+        $config = null;
+        if ($mode === 'any') {
+            $list = [];
+            foreach (array_keys($children) as $childid) {
+                $list[] = ['id' => (int) $childid, 'points' => 1, 'required' => 0];
+            }
+            $config = json_encode(['base' => ['points' => 1], 'competencies' => $list]);
+        }
+        $wanted = $mode === 'any' ? $points : $all;
         if (!empty($row->ruletype)) {
-            return 'kept';
+            $ours = self::is_ours((string) $row->idnumber) && in_array($row->ruletype, [$all, $points], true)
+                && (int) $row->ruleoutcome === competency::OUTCOME_COMPLETE;
+            if (!$ours) {
+                return 'kept';
+            }
+            if ($row->ruletype === $wanted && ($mode !== 'any' || self::same_points($row->ruleconfig, $config))) {
+                return 'kept';
+            }
+            $result = 'updated';
+        } else {
+            if ($mode === 'any' && !self::is_ours((string) $row->idnumber)) {
+                return 'kept';
+            }
+            $result = 'set';
         }
         api::update_competency((object) [
             'id' => $competencyid,
-            'ruletype' => \core_competency\competency_rule_all::class,
+            'ruletype' => $wanted,
             'ruleoutcome' => competency::OUTCOME_COMPLETE,
-            'ruleconfig' => null,
+            'ruleconfig' => $config,
         ]);
-        return 'set';
+        return $result;
+    }
+
+    /**
+     * Whether two configurations of a points rule say the same (same children, same points, same requirement).
+     *
+     * @param string|null $current
+     * @param string $wanted
+     * @return bool
+     */
+    protected static function same_points(?string $current, string $wanted): bool {
+        $normalise = function (?string $json): ?array {
+            $decoded = $json === null ? null : json_decode($json, true);
+            if (!is_array($decoded) || !isset($decoded['base']['points'], $decoded['competencies'])) {
+                return null;
+            }
+            $list = [];
+            foreach ($decoded['competencies'] as $c) {
+                $list[(int) $c['id']] = [(int) $c['points'], (int) $c['required']];
+            }
+            ksort($list);
+            return ['points' => (int) $decoded['base']['points'], 'list' => $list];
+        };
+        $a = $normalise($current);
+        return $a !== null && $a === $normalise($wanted);
     }
 
     /**

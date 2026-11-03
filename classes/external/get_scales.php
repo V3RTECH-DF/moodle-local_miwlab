@@ -22,8 +22,9 @@ namespace local_miwlab\external;
  *
  * Only what the scale is: id, name, items and who owns it. No grade, no person.
  *
- * 1.10.1: also `scale`, the text of the scale exactly as Moodle stores it (the items trimmed in `items` lose the spaces after the commas, and when a
- * course is restored Moodle reuses the scale of the site only when the text is identical, so "Bad, Good, Great" is not "Bad,Good,Great").
+ * 1.10.1: also `scale`, the text of the scale exactly as Moodle stores it (the items trimmed in `items` lose the spaces after the
+ * commas, and when a course is restored Moodle reuses the scale of the site only when the text is identical, so
+ * "Bad, Good, Great" is not "Bad,Good,Great").
  *
  * @package    local_miwlab
  * @copyright  2026 V3RTECH TECNOLOGIA, CONSULTORIA E INOVACAO LTDA <suporte@v3rtech.com.br>

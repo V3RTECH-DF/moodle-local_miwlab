@@ -32,6 +32,9 @@ class get_info extends base {
         // 1.10.0: stamp of the activities (issue 254), competencies (252), scales (250), course completion criteria by activity
         // and by grade in the safe update (247).
         'stampactivities', 'findcoursesbystamp', 'scales', 'competencies', 'completioncriteria',
+        // 1.10.2: a competency "achieved when any child is" and the competencies of the MiwLab moved under the parent it asks
+        // (issue 252).
+        'competencyrules',
     ];
 
     /** @var string[] Add-ons of Moodle (components of other developers) whose presence the MiwLab asks. */

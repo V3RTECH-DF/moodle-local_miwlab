@@ -94,6 +94,9 @@ With that token, the MiwLab uses the plugin to do ten things Moodle core web ser
    competencies to a course and to its activities so that completing the activity marks the competency as achieved, and
    `local_miwlab_get_course_competencies` reads those links. Everything goes through the competency API of Moodle. It only adds: it never
    deletes, moves or re-scales a framework or a competency and never removes or changes a link that exists. Learning plans are not touched.
+   From 1.10.2 a competency made by the MiwLab can also be given the rule "achieved when ANY child is" (`rule: any`) and, when the call asks
+   (`moveparents`), a competency of the MiwLab that sits under another competency of the MiwLab is moved under the parent the list says; what the
+   organisation made or arranged is never moved or given a rule.
 14. **Scales** (1.10.0): `local_miwlab_get_scales` lists the grading scales of the site (and of a course), with their items, for activities
    that are graded by a scale. From 1.10.1 each scale also carries `scale`, its text exactly as Moodle stores it, with the spaces typed after the
    commas: Moodle reuses a scale of the site when restoring a course only if the text is identical, and `items` (trimmed) cannot rebuild it.
@@ -298,7 +301,7 @@ No parameters. Detects the plugin.
 
 `features` only grows: a new feature adds a name, and a name never changes meaning. 1.10.0 adds `stampactivities`,
 `findcoursesbystamp`, `scales`, `competencies` and `completioncriteria` (the safe update takes the completion criteria of the course
-by activity and by grade).
+by activity and by grade); 1.10.2 adds `competencyrules` (the rule "any child" and the move of the competencies of the MiwLab).
 
 ### local_miwlab_get_module_types
 
@@ -689,8 +692,9 @@ or `recommend`: what the rule of the competency does) and `scaleid` (0: the one 
 | Parameter | Type |
 |---|---|
 | framework | `{ idnumber, shortname?, description?, scaleid?, categoryid? }`: found by `idnumber` or created with it |
-| competencies | list of `{ idnumber, shortname?, description?, parentidnumber? }` |
+| competencies | list of `{ idnumber, shortname?, description?, parentidnumber?, rule? }`; `rule` (1.10.2): `all` (default) or `any` |
 | parentrule | bool, optional, default true |
+| moveparents | bool, optional, default false (1.10.2) |
 
 Needs `local/miwlab:managecompetencies` (and the competency permissions of Moodle, which the role has). **It only adds and updates text.**
 The framework is found by its `idnumber`; if none has it, it is created (visible, in the site or in the category, with `scaleid` or the
@@ -702,6 +706,15 @@ another parent, given another scale or hidden; the framework is never deleted, r
 as it is. With `parentrule`, a competency that has daughters in the list and no rule gets the rule "achieved when all the children are"
 (Moodle takes the rule of a mother away when a daughter is added, so it is set after); a rule the organisation set stays (`rule`: `kept`).
 
+**1.10.2.** A competency listed with `rule: any` gets "achieved when ANY child is" instead: a points rule where every child (all the children it has in
+Moodle, not only the ones in the list) is worth one point and one point is enough; the list is brought up to date on every call. It is only
+put on a competency made by the MiwLab (`idnumber` starting with `miwlab:`); on another it is told as `kept`. On a `miwlab:` competency, a rule the
+plugin itself set ("all"/"any" with the outcome "achieved") is replaced when the other one is asked (`rule`: `updated`); any other rule is the
+organisation's and stays. With `moveparents`, a competency made by the MiwLab that sits under another competency made by the MiwLab is moved under
+the `parentidnumber` the list says (through the API of Moodle: same id, same links, what people achieved stays; the rules of the old and of the new
+parent are set again by the step above), and `reason` is `parentmoved` (`action`: `updated`). A competency whose id number is not `miwlab:...`, or
+whose current parent is not one of the MiwLab, is never moved (`parentkept`).
+
 ```
 { "frameworkid": 7, "frameworkaction": "created|updated|unchanged",
   "competencies": [ { "idnumber": "c1", "id": 31, "action": "created|updated|unchanged|skipped",
@@ -710,7 +723,8 @@ as it is. With `parentrule`, a competency that has daughters in the list and no 
 ```
 
 Skipped: `invalid` (no code, a name or code longer than 100 characters, or no name for a new one), `duplicated` (the code twice in the list) or
-`parentnotfound`. `parentkept` in `reason` says that the competency exists under another parent, and it was not moved. It all runs in one
+`parentnotfound`. `parentkept` in `reason` says that the competency exists under another parent, and it was not moved; `parentmoved`, that it was
+(1.10.2, only with `moveparents`). It all runs in one
 transaction.
 
 ### local_miwlab_get_course_competencies (1.10.0)

@@ -260,5 +260,11 @@ function xmldb_local_miwlab_upgrade($oldversion) {
         // changes, no new function and no new permission: the same key reaches it.
         upgrade_plugin_savepoint(true, 2026110301, 'local', 'miwlab');
     }
+    if ($oldversion < 2026110302) {
+        // 1.10.2: local_miwlab_complete_competency_framework takes the rule "any child" (rule) and the move of the competencies
+        // of the MiwLab under the parent it asks (moveparents). No table changes, no new function and no new permission: the same
+        // key reaches it. Get_info tells the feature "competencyrules".
+        upgrade_plugin_savepoint(true, 2026110302, 'local', 'miwlab');
+    }
     return true;
 }

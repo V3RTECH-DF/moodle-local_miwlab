@@ -43,6 +43,7 @@ final class get_info_test extends \advanced_testcase {
                 'hidecourse', 'coursestate', 'blocks', 'badges', 'contentbackup', 'certificatetemplates', 'uploadlimits',
                 'forumtopics', 'coursesoverview', 'fullbackup', 'safeupdate',
                 'stampactivities', 'findcoursesbystamp', 'scales', 'competencies', 'completioncriteria',
+                'competencyrules',
             ],
             $info['features']
         );

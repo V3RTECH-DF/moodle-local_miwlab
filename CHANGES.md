@@ -1,5 +1,20 @@
 # Changes
 
+## 1.10.2 (2026110302) — a competency achieved with any of its children, and the competencies of the MiwLab moved to the parent it asks
+
+- **`local_miwlab_complete_competency_framework` takes `rule` per competency** (`all`, the default, or `any`) **and `moveparents` for the call** (issue 252, option B).
+  `any` gives a competency with children the rule "achieved when ANY child is" (a points rule: each child is worth one point and one point is enough; the list of
+  children is brought up to date every time, since Moodle takes the rule of a mother away when a child is added). It is only put on a competency made by the MiwLab
+  (ID number starting with `miwlab:`); on any other it is told as `kept`. The rule of a competency of the organisation (any rule that is not the plain "all
+  children"/"any child" with the outcome "achieved" on a `miwlab:` competency) is never touched. A rule the plugin itself set can be replaced by the other one
+  (told as `updated`).
+- **`moveparents`**: a competency made by the MiwLab (`miwlab:`) that sits under another competency made by the MiwLab is moved (through
+  `core_competency\api::set_parent_competency`, so its id, links and what people achieved stay) under the parent the list says; told as `parentmoved`. Anything the
+  organisation made, or placed under its own competency, stays where it is (`parentkept`). Without `moveparents` nothing is moved, as before. Why: the MiwLab now
+  puts a level "this course" between the competency of a reference and the skills of each course, and courses sent before had the skills right under the reference.
+- New feature name `competencyrules` in `local_miwlab_get_info`, so a client knows the plugin understands both.
+- No table changes, no new function, no new permission: the upgrade only moves the version, and the same key reaches it. Privacy: nothing new is stored.
+
 ## 1.10.1 (2026110301) — the text of the scale, exactly as Moodle stores it
 
 - **`local_miwlab_get_scales` also returns `scale`**: the text of each scale untouched (`scale.scale`), with the spaces typed after the commas. `items`
