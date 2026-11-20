@@ -1,5 +1,9 @@
 # Changes
 
+## 1.11.0 (2026112002) — Marketplace build checks
+
+- Align PHP formatting and documentation with the Moodle coding standard, and assert `updatepagefiles` in the feature detection test. No behaviour, permission or database schema changes.
+
 ## 1.11.0 (2026112001) — images in safe updates of existing Pages
 
 - Safe updates can add the images referenced by the new content of an existing Page without replacing the activity or changing its progress, grades or completion. The Page keeps its identity and all its previous files.

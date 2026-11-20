@@ -8,11 +8,11 @@
 //
 // Moodle is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with Moodle. If not, see <https://www.gnu.org/licenses/>.
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 namespace local_miwlab\local;
 
@@ -61,8 +61,14 @@ class update_page_files {
                     throw new \moodle_exception('error:invalidoperations', 'local_miwlab', '', 'uncited page file');
                 }
                 $source = $previewid === null ? restorer::draft_file($meta['draftitemid'], $meta['filename'])
-                    : $fs->get_file(\context_course::instance($course->id)->id, 'local_miwlab', self::AREA,
-                        $previewid, '/' . $cm->id . '/', $meta['filename']);
+                    : $fs->get_file(
+                        \context_course::instance($course->id)->id,
+                        'local_miwlab',
+                        self::AREA,
+                        $previewid,
+                        '/' . $cm->id . '/',
+                        $meta['filename']
+                    );
                 if (!$source || $source->get_filepath() !== ($previewid === null ? '/' : '/' . $cm->id . '/')) {
                     throw new \moodle_exception('error:draftfilenotfound', 'local_miwlab');
                 }
@@ -71,8 +77,14 @@ class update_page_files {
                 if ($total > self::MAX_TOTAL_BYTES) {
                     throw new \moodle_exception('error:invalidoperations', 'local_miwlab', '', 'page files too large');
                 }
-                $existing = $fs->get_file(\context_module::instance($cm->id)->id, 'mod_page', 'content', 0,
-                    '/', $meta['filename']);
+                $existing = $fs->get_file(
+                    \context_module::instance($cm->id)->id,
+                    'mod_page',
+                    'content',
+                    0,
+                    '/',
+                    $meta['filename']
+                );
                 if ($existing && $existing->get_contenthash() !== $source->get_contenthash()) {
                     throw new \moodle_exception('error:invalidoperations', 'local_miwlab', '', 'page file conflict');
                 }
@@ -97,8 +109,10 @@ class update_page_files {
         $info = @getimagesizefromstring($bytes);
         $types = ['png' => IMAGETYPE_PNG, 'jpg' => IMAGETYPE_JPEG, 'jpeg' => IMAGETYPE_JPEG, 'gif' => IMAGETYPE_GIF];
         $extension = strtolower(pathinfo($meta['filename'], PATHINFO_EXTENSION));
-        if (!hash_equals($meta['sha256'], hash('sha256', $bytes)) || !$info
-                || ($types[$extension] ?? null) !== $info[2] || $info[0] * $info[1] > 16777216) {
+        if (
+            !hash_equals($meta['sha256'], hash('sha256', $bytes)) || !$info
+            || ($types[$extension] ?? null) !== $info[2] || $info[0] * $info[1] > 16777216
+        ) {
             throw new \moodle_exception('error:invalidoperations', 'local_miwlab', '', 'page file content');
         }
         return image_type_to_mime_type($info[2]);

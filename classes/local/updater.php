@@ -108,8 +108,12 @@ class updater {
         try {
             update_page_files::stage($course, (int) $record->id, $pagefiles);
         } catch (\Throwable $e) {
-            get_file_storage()->delete_area_files(\context_course::instance($course->id)->id,
-                'local_miwlab', update_page_files::AREA, (int) $record->id);
+            get_file_storage()->delete_area_files(
+                \context_course::instance($course->id)->id,
+                'local_miwlab',
+                update_page_files::AREA,
+                (int) $record->id
+            );
             $DB->delete_records('local_miwlab_updates', ['id' => $record->id]);
             throw $e;
         }
@@ -125,8 +129,12 @@ class updater {
                     'filename' => 'package.mbz',
                 ], $package);
             } catch (\Throwable $e) {
-                get_file_storage()->delete_area_files(\context_course::instance($course->id)->id,
-                    'local_miwlab', update_page_files::AREA, (int) $record->id);
+                get_file_storage()->delete_area_files(
+                    \context_course::instance($course->id)->id,
+                    'local_miwlab',
+                    update_page_files::AREA,
+                    (int) $record->id
+                );
                 $DB->delete_records('local_miwlab_updates', ['id' => $record->id]);
                 throw $e;
             }

@@ -271,5 +271,9 @@ function xmldb_local_miwlab_upgrade($oldversion) {
         // No table changes, new functions or permissions; get_info advertises updatepagefiles.
         upgrade_plugin_savepoint(true, 2026112001, 'local', 'miwlab');
     }
+    if ($oldversion < 2026112002) {
+        // 1.11.0 build 2: coding style and feature detection test alignment; no schema or behaviour changes.
+        upgrade_plugin_savepoint(true, 2026112002, 'local', 'miwlab');
+    }
     return true;
 }

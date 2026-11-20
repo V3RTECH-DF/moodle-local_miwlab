@@ -230,8 +230,10 @@ class update_operations {
                     $f = self::object($f, ['draftitemid', 'filename', 'sha256', 'size'], 'page file');
                     $name = $f['filename'] ?? '';
                     $digest = $f['sha256'] ?? '';
-                    if (!is_string($name) || !preg_match('/^imagem-[1-4]\.(png|jpg|jpeg|gif)$/D', $name)
-                            || isset($files[$name]) || !is_string($digest) || !preg_match('/^[a-f0-9]{64}$/D', $digest)) {
+                    if (
+                        !is_string($name) || !preg_match('/^imagem-[1-4]\.(png|jpg|jpeg|gif)$/D', $name)
+                        || isset($files[$name]) || !is_string($digest) || !preg_match('/^[a-f0-9]{64}$/D', $digest)
+                    ) {
                         throw self::invalid('page file name or digest');
                     }
                     $size = self::int($f['size'] ?? null, 1);

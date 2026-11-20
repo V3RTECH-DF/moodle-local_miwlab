@@ -109,8 +109,10 @@ class update_classifier {
                 $valid = property_exists($row, $field) && ($field === 'content' ? $cm->modname === 'page' : true);
                 if (!$valid) {
                     $emit('text', 'skip', 'unknowntype');
-                } else if ((string) $row->$field !== $a['text']['html']
-                        || self::cites_new_file($cm, $field, $a['text']['html'])) {
+                } else if (
+                    (string) $row->$field !== $a['text']['html']
+                    || self::cites_new_file($cm, $field, $a['text']['html'])
+                ) {
                     if (!$inplace) {
                         $emit('text', 'skip', 'unknowntype');
                     } else if (self::cites_new_file($cm, $field, $a['text']['html'], $a['text']['files'] ?? [])) {

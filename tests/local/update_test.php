@@ -902,7 +902,9 @@ final class update_test extends \advanced_testcase {
         $this->assertSame('update', $this->item($preview, 'a:' . $a->cm->page->id . ':text')['action']);
     }
 
-    /** A file from intro cannot satisfy a Page content reference, which has its own serving area. */
+    /**
+     * A file from intro cannot satisfy a Page content reference, which has its own serving area.
+     */
     public function test_page_images_do_not_reuse_a_file_from_intro_as_content(): void {
         $this->resetAfterTest();
         $this->setAdminUser();
@@ -925,7 +927,9 @@ final class update_test extends \advanced_testcase {
         $this->assertSame('intro bytes', $fs->get_file_by_id($intro->get_id())->get_content());
     }
 
-    /** New images travel with a page update and keep the existing files and people's work. */
+    /**
+     * New images travel with a page update and keep the existing files and people's work.
+     */
     public function test_page_images_are_staged_and_added_without_replacing_the_activity(): void {
         global $DB, $USER;
         $this->resetAfterTest();
@@ -981,7 +985,9 @@ final class update_test extends \advanced_testcase {
             'size' => strlen($png)], $png];
     }
 
-    /** File metadata cannot redirect bytes or replace an existing Moodle file. */
+    /**
+     * File metadata cannot redirect bytes or replace an existing Moodle file.
+     */
     public function test_page_images_reject_invalid_digest_foreign_draft_and_existing_name_conflict(): void {
         global $DB, $USER;
         $this->resetAfterTest();
@@ -1048,11 +1054,19 @@ final class update_test extends \advanced_testcase {
         $preview = updater::preview($a->course, $op($meta), '', null);
         $result = $this->apply($preview);
         $this->assertSame(restorer::STATUS_FINISHED, (int) $result->status);
-        $this->assertSame((int) $same->get_id(), (int) get_file_storage()->get_file($context->id, 'mod_page', 'content', 0,
-            '/', 'imagem-1.png')->get_id());
+        $this->assertSame((int) $same->get_id(), (int) get_file_storage()->get_file(
+            $context->id,
+            'mod_page',
+            'content',
+            0,
+            '/',
+            'imagem-1.png'
+        )->get_id());
     }
 
-    /** Accepted bytes cannot be materialised when a different reference is still missing. */
+    /**
+     * Accepted bytes cannot be materialised when a different reference is still missing.
+     */
     public function test_page_images_with_another_missing_reference_stay_out_and_do_not_create_files(): void {
         $this->resetAfterTest();
         $this->setAdminUser();
@@ -1065,11 +1079,19 @@ final class update_test extends \advanced_testcase {
         ]]]), '', null);
         $this->assertSame('newfile', $this->item($preview, 'a:' . $a->cm->page->id . ':text')['reason']);
         $this->apply($preview);
-        $this->assertFalse(get_file_storage()->get_file(\context_module::instance($a->cm->page->id)->id,
-            'mod_page', 'content', 0, '/', 'imagem-1.png'));
+        $this->assertFalse(get_file_storage()->get_file(
+            \context_module::instance($a->cm->page->id)->id,
+            'mod_page',
+            'content',
+            0,
+            '/',
+            'imagem-1.png'
+        ));
     }
 
-    /** The journal removes newly created bytes when a later step fails. */
+    /**
+     * The journal removes newly created bytes when a later step fails.
+     */
     public function test_page_images_rollback_restores_text_and_preserves_existing_files(): void {
         global $DB;
         $this->resetAfterTest();
@@ -1089,12 +1111,20 @@ final class update_test extends \advanced_testcase {
         $result = $this->apply($preview);
         $this->assertSame(restorer::STATUS_FAILED, (int) $result->status);
         $this->assertSame('<p>antigo</p>', $DB->get_field('page', 'content', ['id' => $a->page->id]));
-        $this->assertFalse(get_file_storage()->get_file(\context_module::instance($a->cm->page->id)->id,
-            'mod_page', 'content', 0, '/', 'imagem-1.png'));
+        $this->assertFalse(get_file_storage()->get_file(
+            \context_module::instance($a->cm->page->id)->id,
+            'mod_page',
+            'content',
+            0,
+            '/',
+            'imagem-1.png'
+        ));
         $this->assertSame($before, $this->fingerprint((int) $a->course->id));
     }
 
-    /** The same HTML can repair a missing accepted image, and staging cannot be borrowed by another preview. */
+    /**
+     * The same HTML can repair a missing accepted image, and staging cannot be borrowed by another preview.
+     */
     public function test_page_images_repair_missing_bytes_and_refuse_changed_staging(): void {
         global $DB;
         $this->resetAfterTest();
@@ -1118,21 +1148,33 @@ final class update_test extends \advanced_testcase {
         $this->assertNull($this->item($preview, 'a:' . $a->cm->page->id . ':text'));
         $result = $this->apply($preview);
         $this->assertSame(restorer::STATUS_FINISHED, (int) $result->status);
-        $this->assertSame($id, (int) get_file_storage()->get_file($context->id, 'mod_page', 'content', 0,
-            '/', 'imagem-1.png')->get_id());
+        $this->assertSame($id, (int) get_file_storage()->get_file(
+            $context->id,
+            'mod_page',
+            'content',
+            0,
+            '/',
+            'imagem-1.png'
+        )->get_id());
         // The runner verifies bytes in the private area again and fails before changing the Page.
         $changed = '<p>outra revisão</p>' . $html;
         $preview = updater::preview($a->course, $this->ops(['activities' => [['cmid' => (int) $a->cm->page->id,
             'text' => ['field' => 'content', 'html' => $changed, 'files' => [$meta]]]]]), '', null);
         $record = $DB->get_record('local_miwlab_updates', ['previewid' => $preview['previewid']], '*', MUST_EXIST);
-        get_file_storage()->delete_area_files(\context_course::instance($a->course->id)->id,
-            'local_miwlab', update_page_files::AREA, (int) $record->id);
+        get_file_storage()->delete_area_files(
+            \context_course::instance($a->course->id)->id,
+            'local_miwlab',
+            update_page_files::AREA,
+            (int) $record->id
+        );
         $result = $this->apply($preview);
         $this->assertSame(restorer::STATUS_FAILED, (int) $result->status);
         $this->assertSame($html, $DB->get_field('page', 'content', ['id' => $a->page->id]));
     }
 
-    /** Images are accepted only in a Page of the target course and in its content field. */
+    /**
+     * Images are accepted only in a Page of the target course and in its content field.
+     */
     public function test_page_images_cannot_target_a_foreign_module_or_another_file_area(): void {
         $this->resetAfterTest();
         $this->setAdminUser();
