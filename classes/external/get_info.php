@@ -35,6 +35,7 @@ class get_info extends base {
         // 1.10.2: a competency "achieved when any child is" and the competencies of the MiwLab moved under the parent it asks
         // (issue 252).
         'competencyrules',
+        'updatepagefiles',
     ];
 
     /** @var string[] Add-ons of Moodle (components of other developers) whose presence the MiwLab asks. */

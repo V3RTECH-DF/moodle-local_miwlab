@@ -902,6 +902,257 @@ final class update_test extends \advanced_testcase {
         $this->assertSame('update', $this->item($preview, 'a:' . $a->cm->page->id . ':text')['action']);
     }
 
+    /** A file from intro cannot satisfy a Page content reference, which has its own serving area. */
+    public function test_page_images_do_not_reuse_a_file_from_intro_as_content(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $a = $this->course_with_people();
+        $fs = get_file_storage();
+        $context = \context_module::instance($a->cm->page->id);
+        $intro = $fs->create_file_from_string(['contextid' => $context->id, 'component' => 'mod_page',
+            'filearea' => 'intro', 'itemid' => 0, 'filepath' => '/', 'filename' => 'imagem-1.png'], 'intro bytes');
+        $html = '<img src="@@PLUGINFILE@@/imagem-1.png">';
+        $operation = ['cmid' => (int) $a->cm->page->id, 'text' => ['field' => 'content', 'html' => $html]];
+        $preview = updater::preview($a->course, $this->ops(['activities' => [$operation]]), '', null);
+        $this->assertSame('newfile', $this->item($preview, 'a:' . $a->cm->page->id . ':text')['reason']);
+        [$meta, $png] = $this->page_image_draft();
+        $operation['text']['files'] = [$meta];
+        $preview = updater::preview($a->course, $this->ops(['activities' => [$operation]]), '', null);
+        $this->assertSame('update', $this->item($preview, 'a:' . $a->cm->page->id . ':text')['action']);
+        $result = $this->apply($preview);
+        $this->assertSame(restorer::STATUS_FINISHED, (int) $result->status);
+        $this->assertSame($png, $fs->get_file($context->id, 'mod_page', 'content', 0, '/', 'imagem-1.png')->get_content());
+        $this->assertSame('intro bytes', $fs->get_file_by_id($intro->get_id())->get_content());
+    }
+
+    /** New images travel with a page update and keep the existing files and people's work. */
+    public function test_page_images_are_staged_and_added_without_replacing_the_activity(): void {
+        global $DB, $USER;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $a = $this->course_with_people();
+        $before = $this->fingerprint((int) $a->course->id);
+        $fs = get_file_storage();
+        $context = \context_module::instance($a->cm->page->id);
+        $existing = $fs->create_file_from_string(['contextid' => $context->id, 'component' => 'mod_page',
+            'filearea' => 'content', 'itemid' => 0, 'filepath' => '/', 'filename' => 'antiga.png'], 'original');
+        $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZTZkAAAAASUVORK5CYII=');
+        $draftid = file_get_unused_draft_itemid();
+        $draft = $fs->create_file_from_string(['contextid' => \context_user::instance($USER->id)->id,
+            'component' => 'user', 'filearea' => 'draft', 'itemid' => $draftid, 'filepath' => '/',
+            'filename' => 'imagem-1.png', 'mimetype' => 'text/html'], $png);
+        $html = '<h3>Novo texto</h3><p><img src="@@PLUGINFILE@@/imagem-1.png"></p>';
+        $operations = $this->ops(['activities' => [['cmid' => (int) $a->cm->page->id, 'text' => [
+            'field' => 'content', 'html' => $html, 'files' => [['draftitemid' => $draftid,
+                'filename' => 'imagem-1.png', 'sha256' => hash('sha256', $png), 'size' => strlen($png)]],
+        ]]]]);
+        $preview = updater::preview($a->course, $operations, '', null);
+        $this->assertSame('update', $this->item($preview, 'a:' . $a->cm->page->id . ':text')['action']);
+        // The source may disappear after preview: the accepted bytes belong to the preview now.
+        $draft->delete();
+        $result = $this->apply($preview);
+        $this->assertSame(restorer::STATUS_FINISHED, (int) $result->status);
+        $this->assertSame($html, $DB->get_field('page', 'content', ['id' => $a->page->id]));
+        $file = $fs->get_file($context->id, 'mod_page', 'content', 0, '/', 'imagem-1.png');
+        $this->assertNotFalse($file);
+        $this->assertSame($png, $file->get_content());
+        $this->assertSame('image/png', $file->get_mimetype());
+        $this->assertSame('original', $fs->get_file_by_id($existing->get_id())->get_content());
+        $this->assertSame($before, $this->fingerprint((int) $a->course->id));
+        $again = updater::preview($a->course, $this->ops(['activities' => [[
+            'cmid' => (int) $a->cm->page->id, 'text' => ['field' => 'content', 'html' => $html],
+        ]]]), '', null);
+        $this->assertNull($this->item($again, 'a:' . $a->cm->page->id . ':text'));
+    }
+
+    /**
+     * A valid draft and the metadata the application receives.
+     *
+     * @return array File metadata and bytes.
+     */
+    protected function page_image_draft(): array {
+        global $USER;
+        $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZTZkAAAAASUVORK5CYII=');
+        $id = file_get_unused_draft_itemid();
+        get_file_storage()->create_file_from_string(['contextid' => \context_user::instance($USER->id)->id,
+            'component' => 'user', 'filearea' => 'draft', 'itemid' => $id, 'filepath' => '/',
+            'filename' => 'imagem-1.png'], $png);
+        return [['draftitemid' => $id, 'filename' => 'imagem-1.png', 'sha256' => hash('sha256', $png),
+            'size' => strlen($png)], $png];
+    }
+
+    /** File metadata cannot redirect bytes or replace an existing Moodle file. */
+    public function test_page_images_reject_invalid_digest_foreign_draft_and_existing_name_conflict(): void {
+        global $DB, $USER;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $a = $this->course_with_people();
+        [$meta, $png] = $this->page_image_draft();
+        $html = '<img src="@@PLUGINFILE@@/imagem-1.png">';
+        $op = fn(array $file) => $this->ops(['activities' => [['cmid' => (int) $a->cm->page->id,
+            'text' => ['field' => 'content', 'html' => $html, 'files' => [$file]]]]]);
+        $before = $DB->count_records('local_miwlab_updates');
+        foreach (['digest', 'path', 'size', 'uncited'] as $case) {
+            $bad = $meta;
+            if ($case === 'digest') {
+                $bad['sha256'] = str_repeat('0', 64);
+            } else if ($case === 'path') {
+                $bad['filename'] = '../imagem-1.png';
+            } else if ($case === 'size') {
+                $bad['size']++;
+            } else {
+                $bad['filename'] = 'imagem-2.png';
+            }
+            try {
+                updater::preview($a->course, $op($bad), '', null);
+                $this->fail('accepted invalid image metadata: ' . $case);
+            } catch (\moodle_exception $e) {
+                $this->assertSame('error:invalidoperations', $e->errorcode);
+            }
+        }
+        $notimage = '<html>not an image</html>';
+        $draftid = file_get_unused_draft_itemid();
+        get_file_storage()->create_file_from_string(['contextid' => \context_user::instance($USER->id)->id,
+            'component' => 'user', 'filearea' => 'draft', 'itemid' => $draftid, 'filepath' => '/',
+            'filename' => 'imagem-1.png', 'mimetype' => 'image/png'], $notimage);
+        try {
+            updater::preview($a->course, $op(['draftitemid' => $draftid, 'filename' => 'imagem-1.png',
+                'sha256' => hash('sha256', $notimage), 'size' => strlen($notimage)]), '', null);
+            $this->fail('accepted non-image bytes labelled as a PNG');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('error:invalidoperations', $e->errorcode);
+        }
+        $this->setUser($a->student);
+        try {
+            updater::preview($a->course, $op($meta), '', null);
+            $this->fail('accepted another account draft');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('error:draftfilenotfound', $e->errorcode);
+        }
+        $this->setAdminUser();
+        $context = \context_module::instance($a->cm->page->id);
+        $file = get_file_storage()->create_file_from_string(['contextid' => $context->id, 'component' => 'mod_page',
+            'filearea' => 'content', 'itemid' => 0, 'filepath' => '/', 'filename' => 'imagem-1.png'], 'previous bytes');
+        try {
+            updater::preview($a->course, $op($meta), '', null);
+            $this->fail('overwriting an existing filename was accepted');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('error:invalidoperations', $e->errorcode);
+        }
+        $this->assertSame('previous bytes', $file->get_content());
+        $this->assertSame($before, $DB->count_records('local_miwlab_updates'));
+        // A file with the same digest is safe and must not be duplicated.
+        $file->delete();
+        $same = get_file_storage()->create_file_from_string(['contextid' => $context->id, 'component' => 'mod_page',
+            'filearea' => 'content', 'itemid' => 0, 'filepath' => '/', 'filename' => 'imagem-1.png'], $png);
+        $preview = updater::preview($a->course, $op($meta), '', null);
+        $result = $this->apply($preview);
+        $this->assertSame(restorer::STATUS_FINISHED, (int) $result->status);
+        $this->assertSame((int) $same->get_id(), (int) get_file_storage()->get_file($context->id, 'mod_page', 'content', 0,
+            '/', 'imagem-1.png')->get_id());
+    }
+
+    /** Accepted bytes cannot be materialised when a different reference is still missing. */
+    public function test_page_images_with_another_missing_reference_stay_out_and_do_not_create_files(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $a = $this->course_with_people();
+        [$meta] = $this->page_image_draft();
+        $preview = updater::preview($a->course, $this->ops(['activities' => [[
+            'cmid' => (int) $a->cm->page->id, 'text' => ['field' => 'content',
+                'html' => '<img src="@@PLUGINFILE@@/imagem-1.png"><img src="@@PLUGINFILE@@/missing.png">',
+                'files' => [$meta]],
+        ]]]), '', null);
+        $this->assertSame('newfile', $this->item($preview, 'a:' . $a->cm->page->id . ':text')['reason']);
+        $this->apply($preview);
+        $this->assertFalse(get_file_storage()->get_file(\context_module::instance($a->cm->page->id)->id,
+            'mod_page', 'content', 0, '/', 'imagem-1.png'));
+    }
+
+    /** The journal removes newly created bytes when a later step fails. */
+    public function test_page_images_rollback_restores_text_and_preserves_existing_files(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $a = $this->course_with_people();
+        [$meta] = $this->page_image_draft();
+        $before = $this->fingerprint((int) $a->course->id);
+        $preview = updater::preview($a->course, $this->ops(['activities' => [[
+            'cmid' => (int) $a->cm->page->id, 'text' => ['field' => 'content',
+                'html' => '<img src="@@PLUGINFILE@@/imagem-1.png">', 'files' => [$meta]],
+        ]]]), '', null);
+        update_runner::$stephook = function (string $step): void {
+            if ($step === 'finish') {
+                throw new \RuntimeException('simulated failure after text and image');
+            }
+        };
+        $result = $this->apply($preview);
+        $this->assertSame(restorer::STATUS_FAILED, (int) $result->status);
+        $this->assertSame('<p>antigo</p>', $DB->get_field('page', 'content', ['id' => $a->page->id]));
+        $this->assertFalse(get_file_storage()->get_file(\context_module::instance($a->cm->page->id)->id,
+            'mod_page', 'content', 0, '/', 'imagem-1.png'));
+        $this->assertSame($before, $this->fingerprint((int) $a->course->id));
+    }
+
+    /** The same HTML can repair a missing accepted image, and staging cannot be borrowed by another preview. */
+    public function test_page_images_repair_missing_bytes_and_refuse_changed_staging(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $a = $this->course_with_people();
+        [$meta, $png] = $this->page_image_draft();
+        $html = '<img src="@@PLUGINFILE@@/imagem-1.png">';
+        $DB->set_field('page', 'content', $html, ['id' => $a->page->id]);
+        $op = $this->ops(['activities' => [['cmid' => (int) $a->cm->page->id,
+            'text' => ['field' => 'content', 'html' => $html, 'files' => [$meta]]]]]);
+        $preview = updater::preview($a->course, $op, '', null);
+        $this->assertSame('update', $this->item($preview, 'a:' . $a->cm->page->id . ':text')['action']);
+        $result = $this->apply($preview);
+        $this->assertSame(restorer::STATUS_FINISHED, (int) $result->status);
+        $context = \context_module::instance($a->cm->page->id);
+        $file = get_file_storage()->get_file($context->id, 'mod_page', 'content', 0, '/', 'imagem-1.png');
+        $this->assertSame($png, $file->get_content());
+        // A second update with the same image neither duplicates nor overwrites it.
+        $id = (int) $file->get_id();
+        $preview = updater::preview($a->course, $op, '', null);
+        $this->assertNull($this->item($preview, 'a:' . $a->cm->page->id . ':text'));
+        $result = $this->apply($preview);
+        $this->assertSame(restorer::STATUS_FINISHED, (int) $result->status);
+        $this->assertSame($id, (int) get_file_storage()->get_file($context->id, 'mod_page', 'content', 0,
+            '/', 'imagem-1.png')->get_id());
+        // The runner verifies bytes in the private area again and fails before changing the Page.
+        $changed = '<p>outra revisão</p>' . $html;
+        $preview = updater::preview($a->course, $this->ops(['activities' => [['cmid' => (int) $a->cm->page->id,
+            'text' => ['field' => 'content', 'html' => $changed, 'files' => [$meta]]]]]), '', null);
+        $record = $DB->get_record('local_miwlab_updates', ['previewid' => $preview['previewid']], '*', MUST_EXIST);
+        get_file_storage()->delete_area_files(\context_course::instance($a->course->id)->id,
+            'local_miwlab', update_page_files::AREA, (int) $record->id);
+        $result = $this->apply($preview);
+        $this->assertSame(restorer::STATUS_FAILED, (int) $result->status);
+        $this->assertSame($html, $DB->get_field('page', 'content', ['id' => $a->page->id]));
+    }
+
+    /** Images are accepted only in a Page of the target course and in its content field. */
+    public function test_page_images_cannot_target_a_foreign_module_or_another_file_area(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $a = $this->course_with_people();
+        [$meta] = $this->page_image_draft();
+        $foreign = $this->getDataGenerator()->create_module('page', ['course' => $this->getDataGenerator()->create_course()->id]);
+        foreach (['foreign', 'intro'] as $case) {
+            try {
+                updater::preview($a->course, $this->ops(['activities' => [[
+                    'cmid' => $case === 'foreign' ? (int) $foreign->cmid : (int) $a->cm->page->id,
+                    'text' => ['field' => $case === 'intro' ? 'intro' : 'content',
+                        'html' => '<img src="@@PLUGINFILE@@/imagem-1.png">', 'files' => [$meta]],
+                ]]]), '', null);
+                $this->fail('accepted images outside the Page content of this course');
+            } catch (\moodle_exception $e) {
+                $this->assertSame($case === 'foreign' ? 'error:foreignid' : 'error:invalidoperations', $e->errorcode);
+            }
+        }
+    }
+
     public function test_slots_keep_the_places_of_what_is_not_listed(): void {
         $this->assertSame([1, 9, 2, 3], update_runner::slots([1, 2, 9, 3], [9, 2, 3], [9, 2, 3]));
         $this->assertSame([5, 2, 1], update_runner::slots([5, 1, 2], [2, 1], [1, 2]));

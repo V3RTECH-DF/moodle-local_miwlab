@@ -75,6 +75,7 @@ class update_runner {
             // checked below).
             replacer::require_unchanged($course->id, $preview->signature, 0);
             $ops = json_decode($preview->operations, true);
+            $pagefiles = update_page_files::sources($course, $ops, (int) $preview->id);
             $previewitems = json_decode($preview->items, true);
             $plan = self::reconcile($course, $ops, $previewitems, $full);
 
@@ -100,6 +101,8 @@ class update_runner {
                 self::step('restore');
                 [$keys, $sections] = self::restore_additions($course, $record, $preview, $ops, $journal);
             }
+            update_page_files::apply($pagefiles, $plan, $journal);
+            self::step('pagefiles');
             self::apply($course, $ops, $plan, $appliers, $keys, $sections);
             self::finish_order($course, $ops, $keys, $sections);
             self::step('finish');
@@ -157,6 +160,7 @@ class update_runner {
         } finally {
             if ($preview && $context) {
                 get_file_storage()->delete_area_files($context->id, 'local_miwlab', updater::PACKAGE_AREA, (int) $preview->id);
+                get_file_storage()->delete_area_files($context->id, 'local_miwlab', update_page_files::AREA, (int) $preview->id);
             }
         }
     }

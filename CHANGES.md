@@ -1,5 +1,12 @@
 # Changes
 
+## 1.11.0 (2026112001) — images in safe updates of existing Pages
+
+- Safe updates can add the images referenced by the new content of an existing Page without replacing the activity or changing its progress, grades or completion. The Page keeps its identity and all its previous files.
+- `local_miwlab_get_info` advertises `updatepagefiles`. Clients send authenticated draft references, SHA-256 digests and byte counts with the Page text. The plugin verifies ownership, target course and file area, canonical names, image signatures and limits; it stages accepted bytes privately for the preview and verifies them again before applying it.
+- Images are limited to four per Page, 24 per preview, 2 MiB per image and 48 MiB in total. Only PNG, JPEG and GIF are accepted. An existing file with the same name and different bytes is refused; identical bytes are reused. New files are added only when the corresponding text can be applied, and removed by the journal if the update fails.
+- No table changes, new function or permission. The existing service key continues to work. Private staged files expire with their preview and are removed after application. No new personal data is collected.
+
 ## 1.10.2 (2026110302) — a competency achieved with any of its children, and the competencies of the MiwLab moved to the parent it asks
 
 - **`local_miwlab_complete_competency_framework` takes `rule` per competency** (`all`, the default, or `any`) **and `moveparents` for the call** (issue 252, option B).

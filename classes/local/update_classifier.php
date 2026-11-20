@@ -109,10 +109,11 @@ class update_classifier {
                 $valid = property_exists($row, $field) && ($field === 'content' ? $cm->modname === 'page' : true);
                 if (!$valid) {
                     $emit('text', 'skip', 'unknowntype');
-                } else if ((string) $row->$field !== $a['text']['html']) {
+                } else if ((string) $row->$field !== $a['text']['html']
+                        || self::cites_new_file($cm, $field, $a['text']['html'])) {
                     if (!$inplace) {
                         $emit('text', 'skip', 'unknowntype');
-                    } else if (self::cites_new_file($cm, $field, $a['text']['html'])) {
+                    } else if (self::cites_new_file($cm, $field, $a['text']['html'], $a['text']['files'] ?? [])) {
                         $emit('text', 'skip', 'newfile');
                     } else {
                         $emit('text', 'update');
@@ -526,16 +527,23 @@ class update_classifier {
      * @param \cm_info $cm
      * @param string $field intro or content.
      * @param string $html
+     * @param array $files Verified images accepted for this Page's content.
      * @return bool
      */
-    protected static function cites_new_file(\cm_info $cm, string $field, string $html): bool {
+    protected static function cites_new_file(\cm_info $cm, string $field, string $html, array $files = []): bool {
         $names = self::cited_files($html);
         if (!$names) {
             return false;
         }
         $fs = get_file_storage();
         $have = [];
-        foreach ([$field, 'intro', 'content'] as $area) {
+        if ($cm->modname === 'page' && $field === 'content') {
+            foreach ($files as $file) {
+                $have['/' . $file['filename']] = true;
+            }
+        }
+        $areas = $cm->modname === 'page' && $field === 'content' ? ['content'] : [$field, 'intro', 'content'];
+        foreach ($areas as $area) {
             foreach ($fs->get_area_files($cm->context->id, 'mod_' . $cm->modname, $area, false, 'id', false) as $f) {
                 $have[$f->get_filepath() . $f->get_filename()] = true;
             }

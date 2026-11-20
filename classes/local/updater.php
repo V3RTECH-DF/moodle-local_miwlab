@@ -79,6 +79,7 @@ class updater {
         global $DB, $USER;
         replacer::require_unchanged($course->id, $expectedsignature, 0);
         $ops = update_operations::parse((int) $course->id, $operations);
+        $pagefiles = update_page_files::sources($course, $ops);
         $needspackage = $ops['added'] || $ops['newsections'];
         if ($needspackage && !$package) {
             throw new moodle_exception('error:draftfilenotfound', 'local_miwlab');
@@ -104,6 +105,14 @@ class updater {
             'timeexpires' => $now + self::LIFETIME,
         ];
         $record->id = $DB->insert_record('local_miwlab_updates', $record);
+        try {
+            update_page_files::stage($course, (int) $record->id, $pagefiles);
+        } catch (\Throwable $e) {
+            get_file_storage()->delete_area_files(\context_course::instance($course->id)->id,
+                'local_miwlab', update_page_files::AREA, (int) $record->id);
+            $DB->delete_records('local_miwlab_updates', ['id' => $record->id]);
+            throw $e;
+        }
         if ($needspackage) {
             try {
                 self::inspect_package($package, $course, $ops);
@@ -116,6 +125,8 @@ class updater {
                     'filename' => 'package.mbz',
                 ], $package);
             } catch (\Throwable $e) {
+                get_file_storage()->delete_area_files(\context_course::instance($course->id)->id,
+                    'local_miwlab', update_page_files::AREA, (int) $record->id);
                 $DB->delete_records('local_miwlab_updates', ['id' => $record->id]);
                 throw $e;
             }
@@ -390,6 +401,7 @@ class updater {
             $context = \context_course::instance((int) $r->courseid, IGNORE_MISSING);
             if ($context) {
                 $fs->delete_area_files($context->id, 'local_miwlab', self::PACKAGE_AREA, (int) $r->id);
+                $fs->delete_area_files($context->id, 'local_miwlab', update_page_files::AREA, (int) $r->id);
             }
             $DB->delete_records('local_miwlab_updates', ['id' => $r->id]);
         }

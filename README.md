@@ -855,6 +855,20 @@ that do not block (`warnings`), whether it could be deleted by hand (`suggestdel
 `canchoose` and `needsdiscard`. The progress is read **per activity**, with the same queries the replacement uses (the MiwLab account
 never counts).
 
+From 1.11.0, when `get_info` advertises `updatepagefiles`, a Page's `text` with `field: content` may also contain
+`files: [{ draftitemid: 123, filename: "imagem-1.png", sha256: "<64 lowercase hex characters>", size: 12345 }]`.
+Upload each image through Moodle's authenticated draft upload first. Only the caller's root draft files are accepted.
+The canonical filename must be `imagem-1` through `imagem-4`, with a `png`, `jpg`, `jpeg` or `gif` extension, and must be
+referenced by the HTML as `@@PLUGINFILE@@/filename`. The image signature must match its extension; the MIME type is derived
+from the verified signature. Limits are four images per Page, 24 per preview, 2 MiB per image, 48 MiB per preview and
+16 megapixels per image. Other modules and file areas do not accept `files`.
+
+The preview stages verified bytes privately, independently of the draft's lifetime. Application verifies the staged bytes
+and target again, adds only files needed by an accepted text operation and never overwrites or removes a previous content file.
+An existing name with identical bytes is reused; different bytes refuse the request. The failure journal removes newly added
+files and restores the previous text. A Page whose HTML already matches but lacks the referenced bytes can also be repaired.
+Older clients can continue sending text without `files`; missing references keep the existing `newfile` refusal.
+
 ### local_miwlab_apply_update (1.9.0)
 
 | Parameter | Type |

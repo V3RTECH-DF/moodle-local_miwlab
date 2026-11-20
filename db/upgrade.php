@@ -266,5 +266,10 @@ function xmldb_local_miwlab_upgrade($oldversion) {
         // key reaches it. Get_info tells the feature "competencyrules".
         upgrade_plugin_savepoint(true, 2026110302, 'local', 'miwlab');
     }
+    if ($oldversion < 2026112001) {
+        // 1.11.0: safe Page updates accept verified images through private preview staging.
+        // No table changes, new functions or permissions; get_info advertises updatepagefiles.
+        upgrade_plugin_savepoint(true, 2026112001, 'local', 'miwlab');
+    }
     return true;
 }

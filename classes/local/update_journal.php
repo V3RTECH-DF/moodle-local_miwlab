@@ -56,6 +56,17 @@ class update_journal {
     protected $beforecms = [];
     /** @var int[] Sections that existed before. */
     protected $beforesections = [];
+    /** @var int[] File records created by the update, never the existing files. */
+    protected $createdfiles = [];
+
+    /**
+     * Registers a file that must be removed if this update fails.
+     *
+     * @param int $fileid
+     */
+    public function remember_created_file(int $fileid): void {
+        $this->createdfiles[] = $fileid;
+    }
 
     /**
      * Takes the picture of the structure of the course.
@@ -218,6 +229,12 @@ class update_journal {
             $row = $DB->get_record('block_instances', ['id' => $id]);
             if ($row) {
                 blocks_delete_instance($row);
+            }
+        }
+        foreach ($this->createdfiles as $id) {
+            $file = get_file_storage()->get_file_by_id($id);
+            if ($file) {
+                $file->delete();
             }
         }
         // The rows, exactly as they were.

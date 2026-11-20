@@ -215,12 +215,34 @@ class update_operations {
             }
         }
         if (array_key_exists('text', $a)) {
-            $t = self::object($a['text'], ['field', 'html'], 'text');
+            $t = self::object($a['text'], ['field', 'html', 'files'], 'text');
             $field = $t['field'] ?? '';
             if (!in_array($field, ['intro', 'content'], true)) {
                 throw self::invalid('text field');
             }
             $row['text'] = ['field' => $field, 'html' => self::html($t['html'] ?? null)];
+            if (array_key_exists('files', $t)) {
+                if ($field !== 'content' || !is_array($t['files']) || count($t['files']) > 4) {
+                    throw self::invalid('page files');
+                }
+                $files = [];
+                foreach ($t['files'] as $f) {
+                    $f = self::object($f, ['draftitemid', 'filename', 'sha256', 'size'], 'page file');
+                    $name = $f['filename'] ?? '';
+                    $digest = $f['sha256'] ?? '';
+                    if (!is_string($name) || !preg_match('/^imagem-[1-4]\.(png|jpg|jpeg|gif)$/D', $name)
+                            || isset($files[$name]) || !is_string($digest) || !preg_match('/^[a-f0-9]{64}$/D', $digest)) {
+                        throw self::invalid('page file name or digest');
+                    }
+                    $size = self::int($f['size'] ?? null, 1);
+                    if ($size > update_page_files::MAX_FILE_BYTES) {
+                        throw self::invalid('page file size');
+                    }
+                    $files[$name] = ['draftitemid' => self::int($f['draftitemid'] ?? null, 1),
+                        'filename' => $name, 'sha256' => $digest, 'size' => $size];
+                }
+                $row['text']['files'] = array_values($files);
+            }
         }
         if (array_key_exists('completion', $a)) {
             $c = self::object($a['completion'], array_merge(self::COMPLETION, ['type']), 'completion');
