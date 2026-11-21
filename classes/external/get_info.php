@@ -39,6 +39,9 @@ class get_info extends base {
         // 1.12.0 (issue 333): badges and the progress bar added to a course that exists ("gamification"), and the site switches
         // reported by get_info and turned on after the person confirmed ("siteswitches").
         'gamification', 'siteswitches',
+        // 1.13.0: the opening topics of the forums created by the safe update (issue 347) and the summary of the course carried by
+        // it (issue 348).
+        'updateforumtopics', 'updatecoursesummary',
     ];
 
     /** @var string[] Add-ons of Moodle (components of other developers) whose presence the MiwLab asks. */

@@ -303,7 +303,7 @@ No parameters. Detects the plugin.
 
 `features` only grows: a new feature adds a name, and a name never changes meaning. 1.10.0 adds `stampactivities`,
 `findcoursesbystamp`, `scales`, `competencies` and `completioncriteria` (the safe update takes the completion criteria of the course
-by activity and by grade); 1.10.2 adds `competencyrules` (the rule "any child" and the move of the competencies of the MiwLab).
+by activity and by grade); 1.10.2 adds `competencyrules` (the rule "any child" and the move of the competencies of the MiwLab). 1.13.0 adds `updateforumtopics` (the safe update creates the forum topics that are not in their forum yet, through `local_miwlab_create_forum_topics`; a topic already there is never rewritten) and `updatecoursesummary` (`coursesettings.summary` changes the summary of the course in place, only when it differs; the old one goes back if the update fails). A client must not send `summary` to an earlier version.
 
 ### local_miwlab_get_module_types
 
@@ -786,6 +786,20 @@ Needs `local/miwlab:managegamification` in the course and, with badges, `moodle/
 
 Skipped badge: `badgesoff`, `coursebadgesoff`, `completionoff` or `noactivities`; block: `notinstalled` or `disabled`.
 
+### local_miwlab_create_forum_topics (1.13.0)
+
+| Parameter | Type |
+|---|---|
+| courseid | int |
+| draftitemid | int (draft area with the package of the topics: a gzipped archive with `miwlab/foruns.json` and `miwlab/foruns/<sha1>`) |
+| filename | string (optional) |
+
+Needs `local/miwlab:updatecourse` in the course and the permission to start a discussion in each forum. In `foruns.json` each forum is told by `cmid` (its course module in this course). Creates, without any notification, the topics that are not in their forum yet (same forum, same title); a topic already there is left as it is, even if its text changed; the single simple discussion forum is left to Moodle.
+
+```
+{ "courseid": 7, "created": 2, "existing": 1, "skipped": 0, "note": "" }
+```
+
 ### local_miwlab_get_course_completion
 
 | Parameter | Type |
@@ -861,7 +875,7 @@ the list announces (or that carries an activity of the course) refuses the call.
   "retired": [ { "cmid": 51 } ], "sections": [ { "id": 12, "name": "...", "summary": "..." } ],
   "newsections": [ { "key": "s1", "number": 5, "name": "..." } ], "retiredsections": [ { "id": 14 } ],
   "order": [ { "section": 12, "items": [52, "n1", 53] } ], "sectionorder": [12, "s1", 13],
-  "coursesettings": { "completion": { "choice": "keep|replace", "aggregation": 1, "activityaggregation": 1,
+  "coursesettings": { "summary": "<html>", "completion": { "choice": "keep|replace", "aggregation": 1, "activityaggregation": 1,
                                       "criteria": [ { "type": 4, "cmid": 52 }, { "type": 6, "grade": 60 }, { "type": 8, "courseinstance": 3 } ] },
                       "gradebook": { "choice": "keep|replace", "category": { "aggregation": 13 } },
                       "blocks": [ { "proposal": "add|replace|remove", "choice": "keep|apply", "name": "html", "instanceid": 5, "config": { } } ] } }

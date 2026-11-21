@@ -282,6 +282,94 @@ final class forum_topics_test extends \advanced_testcase {
         $this->assertSame(1, $DB->count_records('forum_discussions', ['forum' => $forums['Avisos']->id, 'name' => 'Calendário']));
     }
 
+    public function test_in_a_course_that_exists_the_forum_is_the_course_module_and_only_missing_topics_are_created(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        [$course, $forums] = $this->restored_course();
+        $this->discussion($course, $forums['Geral'], get_admin(), 'Boas-vindas', ['message' => '<p>Texto que ficou no Moodle</p>']);
+        $dir = $this->package([
+            // No section and no position: the cmid is enough. The name may even differ (a rename left out by the update).
+            ['cmid' => (int) $forums['Geral']->cmid, 'nome' => 'Geral', 'topicos' => [
+                ['titulo' => 'Boas-vindas', 'texto' => '<p>Texto mudado no MiwLab</p>'],
+                ['titulo' => 'Como estudar', 'texto' => '<p>Passo a passo.</p>'],
+            ]],
+            ['cmid' => (int) $forums['Dúvidas']->cmid, 'nome' => 'Nome antigo',
+                'topicos' => [['titulo' => 'Pergunte', 'texto' => '<p>?</p>']]],
+        ]);
+        $result = forum_topics::create_from_package($course->id, $dir);
+        $this->assertSame(['created' => 2, 'skipped' => 0, 'existing' => 1, 'note' => ''], $result);
+        $this->assertSame(
+            ['Boas-vindas', 'Como estudar'],
+            array_values($DB->get_fieldset_select('forum_discussions', 'name', 'forum = ? ORDER BY id', [$forums['Geral']->id]))
+        );
+        $first = $DB->get_record('forum_discussions', ['forum' => $forums['Geral']->id, 'name' => 'Boas-vindas'], '*', MUST_EXIST);
+        $this->assertSame(
+            '<p>Texto que ficou no Moodle</p>',
+            $DB->get_field('forum_posts', 'message', ['id' => $first->firstpost]),
+            'a topic that already exists is not rewritten'
+        );
+        $again = forum_topics::create_from_package($course->id, $dir);
+        $this->assertSame(['created' => 0, 'skipped' => 0, 'existing' => 3, 'note' => ''], $again);
+        $this->assertSame(2, $DB->count_records('forum_discussions', ['forum' => $forums['Geral']->id]));
+    }
+
+    public function test_a_course_module_that_is_not_a_forum_of_the_course_is_not_created_with_the_reason(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        [$course] = $this->restored_course();
+        $other = $this->getDataGenerator()->create_course();
+        $foreign = $this->getDataGenerator()->create_module('forum', ['course' => $other->id, 'name' => 'De outro curso']);
+        $page = $this->getDataGenerator()->create_module('page', ['course' => $course->id, 'name' => 'Uma pagina']);
+        $dir = $this->package([
+            ['cmid' => (int) $foreign->cmid, 'nome' => 'De outro curso', 'topicos' => [['titulo' => 'A', 'texto' => '<p>a</p>']]],
+            ['cmid' => (int) get_coursemodule_from_instance('page', $page->id)->id, 'nome' => 'Uma pagina',
+                'topicos' => [['titulo' => 'B', 'texto' => '<p>b</p>']]],
+            ['cmid' => 999999, 'nome' => 'Nenhum', 'topicos' => [['titulo' => 'C', 'texto' => '<p>c</p>']]],
+        ]);
+        $result = forum_topics::create_from_package($course->id, $dir);
+        $this->assertSame(0, $result['created']);
+        $this->assertSame(3, $result['skipped']);
+        $this->assertStringContainsString('De outro curso', $result['note']);
+        $this->assertSame(0, $DB->count_records('forum_discussions', ['forum' => $foreign->id]));
+    }
+
+    public function test_the_archive_of_the_update_is_unpacked_and_its_topics_created(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        [$course, $forums] = $this->restored_course();
+        $anexo = 'anexo do topico';
+        $dir = $this->package([
+            ['cmid' => (int) $forums['Geral']->cmid, 'nome' => 'Geral', 'topicos' => [
+                ['titulo' => 'Com anexo', 'texto' => '<p>t</p>', 'anexos' => [['nome' => 'a.txt', 'sha1' => sha1($anexo)]]],
+            ]],
+        ], [$anexo]);
+        $packer = get_file_packer('application/vnd.moodle.backup');
+        $files = [
+            'miwlab/foruns.json' => $dir . '/miwlab/foruns.json',
+            'miwlab/foruns/' . sha1($anexo) => $dir . '/miwlab/foruns/' . sha1($anexo),
+        ];
+        $fs = get_file_storage();
+        $record = ['contextid' => \context_user::instance(get_admin()->id)->id, 'component' => 'user', 'filearea' => 'draft',
+            'itemid' => file_get_unused_draft_itemid(), 'filepath' => '/', 'filename' => 'topicos.mbz'];
+        $target = make_temp_directory('miwlab_archive_' . random_string(6)) . '/topicos.mbz';
+        $this->assertTrue($packer->archive_to_pathname($files, $target));
+        $stored = $fs->create_file_from_pathname($record, $target);
+        $result = forum_topics::create_from_archive((int) $course->id, $stored);
+        $this->assertSame(['created' => 1, 'skipped' => 0, 'existing' => 0, 'note' => ''], $result);
+        $discussion = $DB->get_record('forum_discussions', ['forum' => $forums['Geral']->id, 'name' => 'Com anexo'], '*', MUST_EXIST);
+        $this->assertEquals(1, $DB->get_field('forum_posts', 'attachment', ['id' => $discussion->firstpost]));
+        // Something that is not an archive creates nothing and says why.
+        $bad = $fs->create_file_from_string(['filename' => 'ruim.mbz'] + $record, 'isto nao e um arquivo');
+        $none = forum_topics::create_from_archive((int) $course->id, $bad);
+        // Moodle itself says, through debugging(), that the file is not an archive.
+        $this->assertDebuggingCalled();
+        $this->assertSame(0, $none['created']);
+        $this->assertSame(1, $none['skipped']);
+    }
+
     public function test_a_forum_that_does_not_match_is_skipped_with_the_reason(): void {
         global $DB;
         $this->resetAfterTest();

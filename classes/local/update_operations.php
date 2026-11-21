@@ -26,7 +26,7 @@ use moodle_exception;
  * completiongradeitemnumber, completionpassgrade, type {column: int}}, availability? (JSON string or null), visible?, dates?
  * {column: int}, grademax?}, added[] {key, module, name, section (section id, or the key of a new section)}, retired[] {cmid},
  * sections[] {id, name?, summary?}, newsections[] {key, number, name}, retiredsections[] {id}, order[] {section, items[]},
- * sectionorder[], coursesettings {completion? {choice, aggregation, activityaggregation?, criteria[] {type 4, cmid | type 6,
+ * sectionorder[], coursesettings {summary? (the HTML of the course description, 1.13.0), completion? {choice, aggregation, activityaggregation?, criteria[] {type 4, cmid | type 6,
  * grade | type 8, courseinstance}}, gradebook? {choice,
  * category
  {aggregation, aggregateonlygraded, keephigh, droplow}}, blocks[] {proposal add|replace|remove, choice keep|apply, name,
@@ -446,7 +446,7 @@ class update_operations {
         if ($c === [] || $c === null) {
             return [];
         }
-        $c = self::object($c, ['completion', 'gradebook', 'blocks'], 'coursesettings');
+        $c = self::object($c, ['completion', 'gradebook', 'blocks', 'summary'], 'coursesettings');
         $out = [];
         $choice = function ($v): string {
             if (!in_array($v, ['keep', 'replace'], true)) {
@@ -480,6 +480,10 @@ class update_operations {
             }
             $out['completion'] = ['choice' => $choice($x['choice'] ?? 'keep'), 'aggregation' => $agg,
                 'activityaggregation' => $activityagg, 'criteria' => $criteria];
+        }
+        if (array_key_exists('summary', $c)) {
+            // The description of the course (1.13.0, issue 348): HTML as the MiwLab cleaned it, the way a section summary comes.
+            $out['summary'] = self::html($c['summary']);
         }
         if (array_key_exists('gradebook', $c)) {
             $x = self::object($c['gradebook'], ['choice', 'category'], 'gradebook setting');

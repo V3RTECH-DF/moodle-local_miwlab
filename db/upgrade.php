@@ -283,5 +283,12 @@ function xmldb_local_miwlab_upgrade($oldversion) {
         \local_miwlab\local\provisioning::ensure_role();
         upgrade_plugin_savepoint(true, 2026112101, 'local', 'miwlab');
     }
+    if ($oldversion < 2026112102) {
+        // 1.13.0 (issues 347 and 348): the safe update creates the opening topics of the forums that are not there yet (the new
+        // function local_miwlab_create_forum_topics comes to the "MiwLab (local_miwlab)" service when Moodle reads
+        // db/services.php right after this step, so the same key reaches it) and carries the description of the course
+        // (coursesettings.summary). No table changes and no new permission.
+        upgrade_plugin_savepoint(true, 2026112102, 'local', 'miwlab');
+    }
     return true;
 }

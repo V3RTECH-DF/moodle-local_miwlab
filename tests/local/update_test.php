@@ -472,6 +472,77 @@ final class update_test extends \advanced_testcase {
         $this->assertEquals(1, $DB->get_field('course_modules', 'visible', ['id' => $a->cm->forum->id]));
     }
 
+    public function test_the_description_of_the_course_is_changed_in_place_and_only_when_it_differs(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->preventResetByRollback();
+        $this->setAdminUser();
+        $a = $this->course_with_people();
+        $DB->update_record('course', (object) ['id' => $a->course->id, 'summary' => '<p>Resumo antigo</p>',
+            'summaryformat' => FORMAT_HTML]);
+        $course = replacer::course((int) $a->course->id);
+        $before = $this->fingerprint($a->course->id);
+
+        // The same text: nothing to show, nothing to apply (the control of "nothing is sent without a change").
+        $same = updater::preview($course, $this->ops(['coursesettings' => ['summary' => '<p>Resumo antigo</p>']]), '', null);
+        $this->assertNull($this->item($same, 'cs:summary'));
+
+        $preview = updater::preview($course, $this->ops(['coursesettings' => ['summary' => '<p>Resumo novo</p>']]), '', null);
+        $item = $this->item($preview, 'cs:summary');
+        $this->assertNotNull($item);
+        $this->assertSame('update', $item['group']);
+        $this->assertSame('summary', $item['field']);
+        $this->assertSame(
+            '<p>Resumo antigo</p>',
+            $DB->get_field('course', 'summary', ['id' => $a->course->id]),
+            'the preview changes nothing'
+        );
+        $record = $this->apply($preview);
+        $this->assertSame((int) restorer::STATUS_FINISHED, (int) $record->status, (string) $record->errormessage);
+        $this->assertSame('<p>Resumo novo</p>', $DB->get_field('course', 'summary', ['id' => $a->course->id]));
+        $this->assertEquals(FORMAT_HTML, $DB->get_field('course', 'summaryformat', ['id' => $a->course->id]));
+        $this->assertSame($before, $this->fingerprint($a->course->id), 'what the people did is untouched');
+        $result = json_decode($record->updateresult, true);
+        $statuses = array_column($result['items'], 'status', 'id');
+        $this->assertSame('updated', $statuses['cs:summary']);
+    }
+
+    public function test_a_description_that_cites_a_new_file_stays_out_and_a_failure_puts_the_old_one_back(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->preventResetByRollback();
+        $this->setAdminUser();
+        $a = $this->course_with_people();
+        $DB->update_record('course', (object) ['id' => $a->course->id, 'summary' => '<p>Antigo</p>',
+            'summaryformat' => FORMAT_HTML]);
+        $course = replacer::course((int) $a->course->id);
+        $cited = '<p>Novo</p><img src="@@PLUGINFILE@@/capa.png">';
+        $preview = updater::preview($course, $this->ops(['coursesettings' => ['summary' => $cited]]), '', null);
+        $item = $this->item($preview, 'cs:summary');
+        $this->assertSame('skip', $item['group']);
+        $this->assertSame('newfile', $item['reason']);
+        $record = $this->apply($preview);
+        $this->assertSame((int) restorer::STATUS_FINISHED, (int) $record->status, (string) $record->errormessage);
+        $this->assertSame('<p>Antigo</p>', $DB->get_field('course', 'summary', ['id' => $a->course->id]));
+
+        // A failure after the description was written puts the old one back.
+        $preview = updater::preview(
+            replacer::course((int) $a->course->id),
+            $this->ops(['coursesettings' => ['summary' => '<p>Outro</p>']]),
+            '',
+            null
+        );
+        update_runner::$stephook = function (string $step): void {
+            if ($step === 'finish') {
+                throw new \RuntimeException('failure after the summary');
+            }
+        };
+        $record = $this->apply($preview);
+        $this->assertSame((int) restorer::STATUS_FAILED, (int) $record->status);
+        $this->assertEquals(1, $record->rolledback, $record->errorcode . ' ' . $record->errormessage);
+        $this->assertSame('<p>Antigo</p>', $DB->get_field('course', 'summary', ['id' => $a->course->id]));
+    }
+
     public function test_the_preview_is_of_one_account_one_course_and_one_use(): void {
         global $DB;
         $this->resetAfterTest();

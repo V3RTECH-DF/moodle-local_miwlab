@@ -444,6 +444,11 @@ class update_runner {
             }
         }
         $cs = $ops['coursesettings'];
+        if ($go('cs:summary')) {
+            self::step('cs:summary');
+            $appliers->course_summary($cs['summary']);
+            $done('cs:summary', 'updated');
+        }
         if ($go('cs:completion')) {
             self::step('cs:completion');
             $appliers->completion_criteria($cs['completion']);

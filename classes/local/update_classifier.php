@@ -231,6 +231,14 @@ class update_classifier {
                 'action' => 'update']);
         }
         $cs = $ops['coursesettings'];
+        if (isset($cs['summary']) && (string) $course->summary !== $cs['summary']) {
+            // The description of the course (1.13.0, issue 348): changed in place, as a section summary is; the images it cites
+            // follow the rule of the sections (a file the course does not have yet stays out, with the reason).
+            $new = self::cites_new_course_file((int) $course->id, $cs['summary']);
+            $add(['id' => 'cs:summary', 'group' => $new ? 'skip' : 'update', 'kind' => 'coursesetting', 'ref' => 'summary',
+                'field' => 'summary', 'name' => (string) $course->fullname, 'action' => $new ? 'skip' : 'update',
+                'reason' => $new ? 'newfile' : '']);
+        }
         if (isset($cs['completion'])) {
             $lost = self::completed_people((int) $course->id);
             if (self::criteria_differ((int) $course->id, $cs['completion'])) {
@@ -579,6 +587,39 @@ class update_classifier {
                 'course',
                 'section',
                 $sectionid,
+                'id',
+                false
+            ) as $f
+        ) {
+            $have['/' . $f->get_filename()] = true;
+        }
+        foreach ($names as $name) {
+            if (!isset($have['/' . $name])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether the description of the course cites a file the course does not have in its summary area.
+     *
+     * @param int $courseid
+     * @param string $html
+     * @return bool
+     */
+    protected static function cites_new_course_file(int $courseid, string $html): bool {
+        $names = self::cited_files($html);
+        if (!$names) {
+            return false;
+        }
+        $have = [];
+        foreach (
+            get_file_storage()->get_area_files(
+                \context_course::instance($courseid)->id,
+                'course',
+                'summary',
+                0,
                 'id',
                 false
             ) as $f

@@ -248,6 +248,28 @@ class update_appliers {
     }
 
     /**
+     * The description of the course (1.13.0, issue 348): the summary as HTML, in place; the journal keeps the one it had.
+     *
+     * @param string $html
+     */
+    public function course_summary(string $html): void {
+        global $DB;
+        $this->journal->remember_course_summary();
+        $DB->update_record('course', (object) [
+            'id' => $this->course->id,
+            'summary' => $html,
+            'summaryformat' => FORMAT_HTML,
+            'timemodified' => time(),
+        ]);
+        \core\event\course_updated::create([
+            'objectid' => $this->course->id,
+            'context' => \context_course::instance($this->course->id),
+            'other' => ['shortname' => $this->course->shortname, 'fullname' => $this->course->fullname,
+                'updatedfields' => ['summary' => $html]],
+        ])->trigger();
+    }
+
+    /**
      * A section the MiwLab removed: hidden, with its activities, never deleted.
      *
      * @param int $sectionid

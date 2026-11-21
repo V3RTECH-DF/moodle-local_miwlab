@@ -50,6 +50,8 @@ class update_journal {
     protected $category = null;
     /** @var array[]|null block_instances rows before, by id. */
     protected $blocks = null;
+    /** @var array|null The description of the course before (summary and its format). */
+    protected $coursesummary = null;
     /** @var int[] Blocks the update created. */
     protected $createdblocks = [];
     /** @var int[] Activities that existed before. */
@@ -180,6 +182,17 @@ class update_journal {
     }
 
     /**
+     * Keeps the description of the course, once.
+     */
+    public function remember_course_summary(): void {
+        global $DB;
+        if ($this->coursesummary === null) {
+            $row = $DB->get_record('course', ['id' => $this->courseid], 'summary, summaryformat, timemodified', MUST_EXIST);
+            $this->coursesummary = (array) $row;
+        }
+    }
+
+    /**
      * Keeps the block instances of the course page.
      */
     public function remember_blocks(): void {
@@ -251,6 +264,9 @@ class update_journal {
         }
         foreach ($this->sections as $row) {
             $DB->update_record('course_sections', (object) $row);
+        }
+        if ($this->coursesummary !== null) {
+            $DB->update_record('course', (object) (['id' => $this->courseid] + $this->coursesummary));
         }
         if ($this->completion !== null) {
             $this->undo_completion();

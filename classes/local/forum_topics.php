@@ -296,9 +296,12 @@ class forum_topics {
         $forums = [];
         $total = 0;
         foreach (array_slice($data['foruns'], 0, self::MAX_FORUMS) as $forum) {
+            // A forum is told either by section and position (a restore: the course is new) or by its course module (1.13.0, the
+            // safe update: the course already exists and its forums have ids).
+            $bycmid = is_array($forum) && is_int($forum['cmid'] ?? null) && $forum['cmid'] > 0;
             if (
-                !is_array($forum) || !is_int($forum['secao'] ?? null) || !is_int($forum['posicao'] ?? null)
-                || !is_string($forum['nome'] ?? null) || !is_array($forum['topicos'] ?? null)
+                !is_array($forum) || !is_string($forum['nome'] ?? null) || !is_array($forum['topicos'] ?? null)
+                || (!$bycmid && (!is_int($forum['secao'] ?? null) || !is_int($forum['posicao'] ?? null)))
             ) {
                 throw new \moodle_exception('error:forumtopicsinvalid', 'local_miwlab');
             }
@@ -331,8 +334,9 @@ class forum_topics {
                 ];
             }
             $forums[] = [
-                'section' => $forum['secao'],
-                'position' => $forum['posicao'],
+                'cmid' => $bycmid ? $forum['cmid'] : 0,
+                'section' => $forum['secao'] ?? -1,
+                'position' => $forum['posicao'] ?? -1,
                 'name' => $forum['nome'],
                 'topics' => $topics,
             ];
@@ -373,6 +377,52 @@ class forum_topics {
     }
 
     /**
+     * One forum of a course by its course module.
+     *
+     * @param int $courseid
+     * @param int $cmid
+     * @return stdClass|null (cmid, forumid, name, type), or null when it is not a forum of the course.
+     */
+    protected static function forum_by_cmid(int $courseid, int $cmid): ?stdClass {
+        global $DB;
+        $sql = "SELECT cm.id AS cmid, f.id AS forumid, f.name, f.type
+                  FROM {course_modules} cm
+                  JOIN {modules} m ON m.id = cm.module AND m.name = :modname
+                  JOIN {forum} f ON f.id = cm.instance
+                 WHERE cm.id = :cmid AND cm.course = :courseid AND cm.deletioninprogress = 0";
+        $row = $DB->get_record_sql($sql, ['modname' => 'forum', 'cmid' => $cmid, 'courseid' => $courseid]);
+        return $row ?: null;
+    }
+
+    /**
+     * Creates, in a course that already exists, the topics a package of the MiwLab carries (1.13.0, the safe update): the ones
+     * that are not in their forum yet, forum by forum, and nothing else. A topic already there (same forum, same title) is left
+     * as it is, even if the MiwLab changed it; nothing is sent to anyone.
+     *
+     * @param int $courseid
+     * @param \stored_file $file The package (a gzipped archive with only miwlab/foruns.json and miwlab/foruns/<sha1>).
+     * @return array ['created' => int, 'skipped' => int, 'existing' => int, 'note' => string]
+     */
+    public static function create_from_archive(int $courseid, \stored_file $file): array {
+        global $CFG;
+        require_once($CFG->libdir . '/filelib.php');
+        if ($file->get_filesize() > 2 * self::MAX_JSON_BYTES) {
+            return ['created' => 0, 'skipped' => 1, 'existing' => 0, 'note' => get_string('error:forumtopicsinvalid', 'local_miwlab')];
+        }
+        $tempdir = make_temp_directory('local_miwlab_topics/' . random_string(16));
+        try {
+            $packer = get_file_packer('application/vnd.moodle.backup');
+            if (!$file->extract_to_pathname($packer, $tempdir)) {
+                return ['created' => 0, 'skipped' => 1, 'existing' => 0,
+                    'note' => get_string('error:forumtopicsinvalid', 'local_miwlab')];
+            }
+            return self::create_from_package($courseid, $tempdir);
+        } finally {
+            fulldelete($tempdir);
+        }
+    }
+
+    /**
      * Whether the current user may start a discussion in the forum (the news forum asks for more).
      *
      * @param stdClass $forum
@@ -407,8 +457,15 @@ class forum_topics {
         }
         $bysection = self::forums_by_section($courseid);
         foreach ($forums as $forum) {
-            $target = $bysection[$forum['section']][$forum['position']] ?? null;
-            if (!$target || $target->name !== $forum['name']) {
+            if ($forum['cmid'] > 0) {
+                // The safe update (1.13.0): the forum is the course module the MiwLab says (the name may have been left as it was).
+                $target = self::forum_by_cmid($courseid, $forum['cmid']);
+                $found = $target !== null;
+            } else {
+                $target = $bysection[$forum['section']][$forum['position']] ?? null;
+                $found = $target && $target->name === $forum['name'];
+            }
+            if (!$found) {
                 self::skip($result, count($forum['topics']), get_string('error:forumnotfound', 'local_miwlab', $forum['name']));
                 continue;
             }

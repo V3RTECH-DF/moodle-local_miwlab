@@ -249,6 +249,13 @@ $functions = [
         'type' => 'write',
         'capabilities' => 'local/miwlab:managecompetencies, moodle/competency:coursecompetencymanage',
     ],
+    'local_miwlab_create_forum_topics' => [
+        'classname' => 'local_miwlab\external\create_forum_topics',
+        'description' => 'Creates, in a course that already exists, the opening topics of its forums that the MiwLab marked and that '
+            . 'are not there yet (same forum, same title); a topic already there is left as it is. No notification is sent.',
+        'type' => 'write',
+        'capabilities' => 'local/miwlab:updatecourse, mod/forum:startdiscussion',
+    ],
     'local_miwlab_enable_features' => [
         'classname' => 'local_miwlab\external\enable_features',
         'description' => 'Turns on (never off) the site switches the competencies and the gamification depend on: competencies, '
@@ -318,6 +325,7 @@ $services = [
             'local_miwlab_set_course_competencies',
             'local_miwlab_enable_features',
             'local_miwlab_apply_gamification',
+            'local_miwlab_create_forum_topics',
         ],
     ],
 ];
