@@ -119,6 +119,27 @@ $capabilities = [
             'manager' => CAP_ALLOW,
         ],
     ],
+    // Turn ON, for the MiwLab and after the person confirmed it there, the site switches the competencies and the gamification need
+    // (1.12.0, issue 333): competencies, badges, course badges, completion tracking and the progress bar block when
+    // installed. A fixed list, only ever on, never off; a risk of configuration, so it is declared as such.
+    'local/miwlab:manageconfig' => [
+        'riskbitmask' => RISK_CONFIG,
+        'captype' => 'write',
+        'contextlevel' => CONTEXT_SYSTEM,
+        'archetypes' => [
+            'manager' => CAP_ALLOW,
+        ],
+    ],
+    // Add the course badges and the progress bar block to a course that exists (1.12.0, issue 333). Never changes, deletes or
+    // creates again a badge the course already has, and never turns the completion of a course off.
+    'local/miwlab:managegamification' => [
+        'riskbitmask' => RISK_CONFIG,
+        'captype' => 'write',
+        'contextlevel' => CONTEXT_COURSE,
+        'archetypes' => [
+            'manager' => CAP_ALLOW,
+        ],
+    ],
     // List the activity and resource types and the course formats installed on the site (names and versions only).
     'local/miwlab:viewmoduletypes' => [
         'captype' => 'read',

@@ -43,15 +43,36 @@ final class get_info_test extends \advanced_testcase {
                 'hidecourse', 'coursestate', 'blocks', 'badges', 'contentbackup', 'certificatetemplates', 'uploadlimits',
                 'forumtopics', 'coursesoverview', 'fullbackup', 'safeupdate',
                 'stampactivities', 'findcoursesbystamp', 'scales', 'competencies', 'completioncriteria',
-                'competencyrules', 'updatepagefiles',
+                'competencyrules', 'updatepagefiles', 'gamification', 'siteswitches',
             ],
             $info['features']
         );
         $this->assertFalse($info['systemcapabilities']['restorecourse']);
         $this->assertFalse($info['systemcapabilities']['viewreports']);
         $this->assertFalse($info['systemcapabilities']['viewmoduletypes']);
+        $this->assertFalse($info['systemcapabilities']['manageconfig']);
         $this->assertTrue($info['competenciesenabled']);
         $this->assertSame(['availability_coursecompleted'], array_column($info['addons'], 'component'));
+    }
+
+    public function test_the_site_switches_the_gamification_depends_on_are_told(): void {
+        $this->resetAfterTest();
+        $this->setUser($this->getDataGenerator()->create_user());
+        set_config('enablebadges', 0);
+        set_config('badges_allowcoursebadges', 1);
+        set_config('enablecompletion', 0);
+        $off = base::clean_returnvalue(get_info::execute_returns(), get_info::execute())['siteconfig'];
+        $this->assertFalse($off['badges']);
+        $this->assertTrue($off['coursebadges']);
+        $this->assertFalse($off['completion']);
+        $info = \core_plugin_manager::instance()->get_plugin_info('block_completion_progress');
+        $this->assertSame((bool) ($info && !empty($info->versiondb)), $off['progressblockinstalled']);
+        // CONTROL: turned on, it says so.
+        set_config('enablebadges', 1);
+        set_config('enablecompletion', 1);
+        $on = base::clean_returnvalue(get_info::execute_returns(), get_info::execute())['siteconfig'];
+        $this->assertTrue($on['badges']);
+        $this->assertTrue($on['completion']);
     }
 
     public function test_competencies_turned_off_are_told(): void {

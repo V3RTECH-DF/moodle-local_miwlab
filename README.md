@@ -169,6 +169,8 @@ capability and the function that needs it:
 | `mod/forum:startdiscussion`, `mod/forum:addnews`, `mod/forum:createattachment`, `mod/forum:pindiscussions` | `local_miwlab_restore_course`, `local_miwlab_replace_course` (1.7.0): the topics recreated after the restore need them in the restored course (`addnews` for the announcements forum, `createattachment` for the files, `pindiscussions` to keep a discussion pinned); without one the course is restored all the same, and the topics that need it are counted as not created |
 | `local/miwlab:viewcompetencies`, `moodle/competency:competencyview`, `moodle/competency:coursecompetencyview` (1.10.0) | `local_miwlab_get_competency_frameworks`, `local_miwlab_get_competencies`, `local_miwlab_get_course_competencies`: the frameworks of the site, their competencies and the competencies linked to a course. The plugin capability is checked first; Moodle's competency API checks its own in the context of the framework or of the course |
 | `local/miwlab:managecompetencies`, `moodle/competency:competencymanage`, `moodle/competency:coursecompetencymanage` (1.10.0) | `local_miwlab_complete_competency_framework` (adds a framework or competencies and updates text), `local_miwlab_set_course_competencies` (links competencies to a course and its activities). They never delete anything: the permissions are what the competency API asks for, and the role only reaches them through these two functions |
+| `local/miwlab:managegamification`, `moodle/badges:createbadge`, `moodle/badges:configurecriteria` (1.12.0) | `local_miwlab_apply_gamification`: course badges and the progress bar block on a course that exists; a badge the course already has is never touched |
+| `local/miwlab:manageconfig` (1.12.0, risk: configuration) | `local_miwlab_enable_features`: turns ON, never off, a fixed list of switches (competencies, badges, course badges, completion tracking, the progress bar block when installed), after the person confirmed it in the MiwLab. Revoke it from the role to keep the plugin from ever changing a site setting: the MiwLab then shows the steps to do by hand |
 | every `mod/<module>:view` of the site | `core_course_get_contents` skips an activity whose view capability the account lacks: without them a quiz, an assignment, a feedback or an H5P activity is missing from the structure (checked on 4.1 and 5.1). Read only; the role gets the new ones on every upgrade and every key generated |
 
 `moodle/course:update` is deliberately not there: it would let the key change the settings of every course, and checked on
@@ -757,6 +759,32 @@ a proficient one.
 
 Skipped: `competencynotfound`, `nopermission` (the account does not see the framework), `frameworkhidden` (Moodle does not link a competency
 of a hidden framework to a course); an activity: `notincourse` or `deleting`. In one transaction: a failure leaves nothing linked.
+
+### local_miwlab_enable_features (1.12.0)
+
+| Parameter | Type |
+|---|---|
+| features | list of `competencies`, `badges`, `coursebadges`, `completion`, `progressblock` |
+
+Needs `local/miwlab:manageconfig` at site level. Turns each one ON and answers `{ "results": [ { "feature": "badges", "result": "enabled|already|notinstalled|unknown" } ] }`. Never turns anything off; a name that is not on the list answers `unknown` and changes nothing; `progressblock` enables the block `block_completion_progress` of another developer only when it is installed (`notinstalled` otherwise: the plugin does not install add-ons).
+
+### local_miwlab_apply_gamification (1.12.0)
+
+| Parameter | Type |
+|---|---|
+| courseid | int |
+| badges | list of `{ key: string, name: string, description: string, issuer?: string, cmids: int[], draftitemid?: int, filename?: string }` |
+| progressblock | bool |
+
+Needs `local/miwlab:managegamification` in the course and, with badges, `moodle/badges:createbadge` and `moodle/badges:configurecriteria`. Creates each badge that the course does not have by name (inactive, with the overall criterion and the completion of every activity in `cmids` that is in the course, then activated), scales the picture from the draft area when it is a PNG, JPEG or GIF up to 2 MiB, turns the completion of the course on when the site has it on, and adds the progress bar block when it is installed and enabled. Repeating it creates nothing: a badge that exists (awarded or not) and a block already on the page are left as they are.
+
+```
+{ "completion": "notneeded|already|enabled|siteoff",
+  "badges": [ { "key": "C01", "action": "created|existing|skipped", "reason": "", "badgeid": 5, "active": true } ],
+  "block": { "action": "notasked|added|existing|skipped", "reason": "" } }
+```
+
+Skipped badge: `badgesoff`, `coursebadgesoff`, `completionoff` or `noactivities`; block: `notinstalled` or `disabled`.
 
 ### local_miwlab_get_course_completion
 

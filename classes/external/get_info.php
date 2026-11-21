@@ -36,6 +36,9 @@ class get_info extends base {
         // (issue 252).
         'competencyrules',
         'updatepagefiles',
+        // 1.12.0 (issue 333): badges and the progress bar added to a course that exists ("gamification"), and the site switches
+        // reported by get_info and turned on after the person confirmed ("siteswitches").
+        'gamification', 'siteswitches',
     ];
 
     /** @var string[] Add-ons of Moodle (components of other developers) whose presence the MiwLab asks. */
@@ -68,12 +71,30 @@ class get_info extends base {
             'moodlerelease' => (string) $CFG->release,
             'features' => self::FEATURES,
             'competenciesenabled' => (bool) get_config('core_competency', 'enabled'),
+            'siteconfig' => self::siteconfig(),
             'addons' => self::addons(),
             'systemcapabilities' => [
                 'restorecourse' => has_capability('local/miwlab:restorecourse', $context),
                 'viewreports' => has_capability('local/miwlab:viewreports', $context),
                 'viewmoduletypes' => has_capability('local/miwlab:viewmoduletypes', $context),
+                'manageconfig' => has_capability('local/miwlab:manageconfig', $context),
             ],
+        ];
+    }
+
+    /**
+     * What the site has on that the competencies and the gamification depend on.
+     *
+     * @return array
+     */
+    protected static function siteconfig(): array {
+        $state = \local_miwlab\local\gamification::site_state();
+        return [
+            'badges' => $state['badges'],
+            'coursebadges' => $state['coursebadges'],
+            'completion' => $state['completion'],
+            'progressblockinstalled' => $state['progressblockinstalled'],
+            'progressblockenabled' => $state['progressblockenabled'],
         ];
     }
 
@@ -114,6 +135,16 @@ class get_info extends base {
             'moodlerelease' => new external_value(PARAM_TEXT, 'Release of Moodle'),
             'features' => new external_multiple_structure(new external_value(PARAM_ALPHANUMEXT, 'Feature name')),
             'competenciesenabled' => new external_value(PARAM_BOOL, 'The competencies of Moodle are enabled on the site'),
+            'siteconfig' => new external_single_structure([
+                'badges' => new external_value(PARAM_BOOL, 'The badges of the site are enabled'),
+                'coursebadges' => new external_value(PARAM_BOOL, 'Badges in courses are enabled'),
+                'completion' => new external_value(PARAM_BOOL, 'Completion tracking is enabled on the site'),
+                'progressblockinstalled' => new external_value(
+                    PARAM_BOOL,
+                    'The progress bar block (block_completion_progress) is installed'
+                ),
+                'progressblockenabled' => new external_value(PARAM_BOOL, 'The progress bar block is installed and enabled'),
+            ], 'Site switches the gamification depends on'),
             'addons' => new external_multiple_structure(new external_single_structure([
                 'component' => new external_value(PARAM_COMPONENT, 'Component of the add-on'),
                 'installed' => new external_value(PARAM_BOOL, 'Installed in the database (not only on disk)'),
@@ -125,6 +156,7 @@ class get_info extends base {
                 'restorecourse' => new external_value(PARAM_BOOL, 'The account holds local/miwlab:restorecourse at site level'),
                 'viewreports' => new external_value(PARAM_BOOL, 'The account holds local/miwlab:viewreports at site level'),
                 'viewmoduletypes' => new external_value(PARAM_BOOL, 'The account holds local/miwlab:viewmoduletypes at site level'),
+                'manageconfig' => new external_value(PARAM_BOOL, 'The account holds local/miwlab:manageconfig at site level'),
             ]),
         ]);
     }

@@ -275,5 +275,13 @@ function xmldb_local_miwlab_upgrade($oldversion) {
         // 1.11.0 build 2: coding style and feature detection test alignment; no schema or behaviour changes.
         upgrade_plugin_savepoint(true, 2026112002, 'local', 'miwlab');
     }
+    if ($oldversion < 2026112101) {
+        // 1.12.0 (issue 333): badges and the progress bar on a course that exists, the site switches in get_info and the switches
+        // turned on after the person confirmed. No table changes. The role gets the new permissions (ensure_role gives
+        // them); the two new functions come to the "MiwLab (local_miwlab)" service when Moodle reads db/services.php right
+        // after this step, so the same key reaches them.
+        \local_miwlab\local\provisioning::ensure_role();
+        upgrade_plugin_savepoint(true, 2026112101, 'local', 'miwlab');
+    }
     return true;
 }

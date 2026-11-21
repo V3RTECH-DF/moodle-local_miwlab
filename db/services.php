@@ -249,6 +249,20 @@ $functions = [
         'type' => 'write',
         'capabilities' => 'local/miwlab:managecompetencies, moodle/competency:coursecompetencymanage',
     ],
+    'local_miwlab_enable_features' => [
+        'classname' => 'local_miwlab\external\enable_features',
+        'description' => 'Turns on (never off) the site switches the competencies and the gamification depend on: competencies, '
+            . 'badges, course badges, completion tracking and the progress bar block when it is installed.',
+        'type' => 'write',
+        'capabilities' => 'local/miwlab:manageconfig',
+    ],
+    'local_miwlab_apply_gamification' => [
+        'classname' => 'local_miwlab\external\apply_gamification',
+        'description' => 'Adds the course badges and the progress bar block to a course that already exists; a badge the course '
+            . 'has by name and a block already on the page are left as they are.',
+        'type' => 'write',
+        'capabilities' => 'local/miwlab:managegamification, moodle/badges:createbadge, moodle/badges:configurecriteria',
+    ],
 ];
 
 // The service of the MiwLab key, with every function the MiwLab calls (the core ones too; the anonymous feedback is read by
@@ -302,6 +316,8 @@ $services = [
             'local_miwlab_complete_competency_framework',
             'local_miwlab_get_course_competencies',
             'local_miwlab_set_course_competencies',
+            'local_miwlab_enable_features',
+            'local_miwlab_apply_gamification',
         ],
     ],
 ];

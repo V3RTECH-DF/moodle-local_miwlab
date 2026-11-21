@@ -90,6 +90,9 @@ class provisioning {
      *   discard and the content backup) sets "include users" off explicitly and checks it after setting (backup_scope), so the
      *   permission changes nothing for them.
      *
+     * - local/miwlab:managegamification, local/miwlab:manageconfig and moodle/badges:createbadge (1.12.0, issue 333):
+     *   local_miwlab_apply_gamification (badges and the progress bar on a course that exists) and
+     *   local_miwlab_enable_features (a fixed list of site switches, only ever turned on).
      * - local/miwlab:viewcompetencies, local/miwlab:managecompetencies and the four moodle/competency:* capabilities (1.10.0, issue
      *   252): the functions that list the frameworks, complete a framework and link competencies to a course and its activities
      *   (they only add and never delete). local/miwlab:updatecourse also covers stamping the ID number of activities (issue 254).
@@ -142,6 +145,11 @@ class provisioning {
         'moodle/competency:competencymanage',
         'moodle/competency:coursecompetencyview',
         'moodle/competency:coursecompetencymanage',
+        // 1.12.0 (issue 333): badges and the progress bar added to a course that exists, and the site switches turned on after the
+        // person confirmed in the MiwLab (a fixed list, only on). No moodle/site:config: the plugin capability is the gate.
+        'local/miwlab:managegamification',
+        'local/miwlab:manageconfig',
+        'moodle/badges:createbadge',
     ];
 
     /**
