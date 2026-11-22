@@ -80,6 +80,7 @@ class updater {
         replacer::require_unchanged($course->id, $expectedsignature, 0);
         $ops = update_operations::parse((int) $course->id, $operations);
         $pagefiles = update_page_files::sources($course, $ops);
+        $courseimage = update_course_image::source($course, $ops);
         $needspackage = $ops['added'] || $ops['newsections'];
         if ($needspackage && !$package) {
             throw new moodle_exception('error:draftfilenotfound', 'local_miwlab');
@@ -107,6 +108,7 @@ class updater {
         $record->id = $DB->insert_record('local_miwlab_updates', $record);
         try {
             update_page_files::stage($course, (int) $record->id, $pagefiles);
+            update_course_image::stage($course, (int) $record->id, $courseimage);
         } catch (\Throwable $e) {
             get_file_storage()->delete_area_files(
                 \context_course::instance($course->id)->id,

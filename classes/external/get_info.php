@@ -42,6 +42,8 @@ class get_info extends base {
         // 1.13.0: the opening topics of the forums created by the safe update (issue 347) and the summary of the course carried by
         // it (issue 348).
         'updateforumtopics', 'updatecoursesummary',
+        // 1.14.0: the image of the course carried by the safe update, replaced in place when its bytes differ (issue 355).
+        'updatecourseimage',
     ];
 
     /** @var string[] Add-ons of Moodle (components of other developers) whose presence the MiwLab asks. */

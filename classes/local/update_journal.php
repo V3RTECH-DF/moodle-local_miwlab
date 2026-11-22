@@ -60,6 +60,8 @@ class update_journal {
     protected $beforesections = [];
     /** @var int[] File records created by the update, never the existing files. */
     protected $createdfiles = [];
+    /** @var array[] Files the update deleted (record and bytes), put back when it fails. */
+    protected $removedfiles = [];
 
     /**
      * Registers a file that must be removed if this update fails.
@@ -68,6 +70,20 @@ class update_journal {
      */
     public function remember_created_file(int $fileid): void {
         $this->createdfiles[] = $fileid;
+    }
+
+    /**
+     * Keeps a file the update is about to delete (the image of the course), with its bytes, so a failure can put it back.
+     *
+     * @param \stored_file $file
+     */
+    public function remember_removed_file(\stored_file $file): void {
+        $this->removedfiles[] = ['record' => [
+            'contextid' => $file->get_contextid(), 'component' => $file->get_component(), 'filearea' => $file->get_filearea(),
+            'itemid' => $file->get_itemid(), 'filepath' => $file->get_filepath(), 'filename' => $file->get_filename(),
+            'mimetype' => $file->get_mimetype(), 'userid' => $file->get_userid(), 'author' => $file->get_author(),
+            'license' => $file->get_license(), 'timecreated' => $file->get_timecreated(),
+        ], 'content' => $file->get_content()];
     }
 
     /**
@@ -249,6 +265,22 @@ class update_journal {
             if ($file) {
                 $file->delete();
             }
+        }
+        foreach ($this->removedfiles as $kept) {
+            $fs = get_file_storage();
+            $r = $kept['record'];
+            $existing = $fs->get_file(
+                $r['contextid'],
+                $r['component'],
+                $r['filearea'],
+                $r['itemid'],
+                $r['filepath'],
+                $r['filename']
+            );
+            if ($existing) {
+                $existing->delete();
+            }
+            $fs->create_file_from_string($r, $kept['content']);
         }
         // The rows, exactly as they were.
         foreach ($this->instances as [$module, $row]) {

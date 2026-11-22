@@ -1,5 +1,14 @@
 # Changes
 
+## 1.14.0 (2026112201) — the image of the course reaches the course in "Update only what is safe"
+
+- **The image of the course is carried by the safe update** (issue 355). `coursesettings.image` of the list of operations (`draftitemid`, `filename` as `imagem-do-curso.png`, `.jpg` or `.gif`, `sha256` and `size`) replaces the image of the course (the "overviewfiles" area, the one the list of courses shows) **in place** and **only when the bytes differ** from the ones the course has, compared by SHA-256 (an image the course already has, under any name, is not sent again). The preview shows it as the item `cs:image`.
+- The image is checked like the images of a Page: it must be in the draft area of the account, with the size and the SHA-256 the application said, a PNG, JPEG or GIF by its content (never by the label), whose extension is its type, up to 2 MiB and 16 million pixels; anything else makes the whole list invalid and nothing is looked at or changed. The bytes are staged privately for the preview and checked again when it is applied.
+- **A description that cites the image** (`@@PLUGINFILE@@/imagem-do-curso.png`) is no longer kept out as `newfile` when the image goes in the same update: the file is also put in the summary area of the course (only when it is missing or is another one) and the description goes with it.
+- The old image and the files it replaced are kept, with their bytes, in the undo journal: a failure puts them back and removes the ones the update created.
+- `local_miwlab_get_info` answers the new feature `updatecourseimage`. A client must not send `image` to an earlier version (it refuses the whole list).
+- No new function, table or permission; the same key works. Privacy: nothing new is stored (the staged image goes with its preview).
+
 ## 1.13.0 (2026112102) — topics of the forums and the description of the course reach the course in "Update only what is safe"
 
 - **The opening topics of the forums are created by the safe update** (issue 347). The new function **`local_miwlab_create_forum_topics`** takes a small package (`miwlab/foruns.json` plus the files of the topics, each forum told by its course module, `cmid`) from a draft area and creates, as the account of the integration and without sending any notification, the topics that are not in their forum yet (same forum, same title), including the forums the update itself created. **A topic that is already there is left exactly as it is, even if the MiwLab changed its text** (never rewritten, never duplicated); a forum that is not in the course, or is not a forum, counts as "not created" with the reason; the single simple discussion forum is left to Moodle. It answers `created`, `existing`, `skipped` and the first `note`. Needs `local/miwlab:updatecourse` in the course and, for each forum, the permission to start a discussion there. A failure here never undoes an update that was already applied: the MiwLab shows it as a warning.

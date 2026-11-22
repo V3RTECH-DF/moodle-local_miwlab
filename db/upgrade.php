@@ -290,5 +290,11 @@ function xmldb_local_miwlab_upgrade($oldversion) {
         // (coursesettings.summary). No table changes and no new permission.
         upgrade_plugin_savepoint(true, 2026112102, 'local', 'miwlab');
     }
+    if ($oldversion < 2026112201) {
+        // 1.14.0 (issue 355): the safe update carries the image of the course (coursesettings.image), replaced in place when its
+        // bytes differ from the ones the course has. No new function, table or permission: the feature name updatecourseimage in
+        // get_info is what tells the MiwLab it can send the image.
+        upgrade_plugin_savepoint(true, 2026112201, 'local', 'miwlab');
+    }
     return true;
 }

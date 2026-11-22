@@ -543,6 +543,242 @@ final class update_test extends \advanced_testcase {
         $this->assertSame('<p>Antigo</p>', $DB->get_field('course', 'summary', ['id' => $a->course->id]));
     }
 
+    /**
+     * A small image of one color, as PNG or JPEG bytes.
+     *
+     * @param int $red
+     * @param string $type png or jpg
+     * @return string
+     */
+    protected function colored_image(int $red, string $type = 'png'): string {
+        $im = imagecreatetruecolor(4, 4);
+        imagefill($im, 0, 0, imagecolorallocate($im, $red, 10, 10));
+        ob_start();
+        $type === 'png' ? imagepng($im) : imagejpeg($im, null, 100);
+        $bytes = ob_get_clean();
+        imagedestroy($im);
+        return $bytes;
+    }
+
+    /**
+     * Puts an image in the draft area of the account and returns its metadata as the application sends it.
+     *
+     * @param string $bytes
+     * @param string $name
+     * @return array
+     */
+    protected function course_image_meta(string $bytes, string $name = 'imagem-do-curso.png'): array {
+        global $USER;
+        $id = file_get_unused_draft_itemid();
+        get_file_storage()->create_file_from_string(['contextid' => \context_user::instance($USER->id)->id,
+            'component' => 'user', 'filearea' => 'draft', 'itemid' => $id, 'filepath' => '/', 'filename' => $name], $bytes);
+        return ['draftitemid' => $id, 'filename' => $name, 'sha256' => hash('sha256', $bytes), 'size' => strlen($bytes)];
+    }
+
+    /**
+     * Sets the files the course has in a file area of its context (the image of the course and the files of its description).
+     *
+     * @param int $courseid
+     * @param string $area overviewfiles or summary
+     * @param array $files name => bytes
+     */
+    protected function course_files(int $courseid, string $area, array $files): void {
+        $fs = get_file_storage();
+        $ctx = \context_course::instance($courseid)->id;
+        $fs->delete_area_files($ctx, 'course', $area);
+        foreach ($files as $name => $bytes) {
+            $fs->create_file_from_string(['contextid' => $ctx, 'component' => 'course', 'filearea' => $area, 'itemid' => 0,
+                'filepath' => '/', 'filename' => $name], $bytes);
+        }
+    }
+
+    /**
+     * The files of a course area as name => bytes.
+     *
+     * @param int $courseid
+     * @param string $area
+     * @return array
+     */
+    protected function files_of(int $courseid, string $area): array {
+        $out = [];
+        $ctx = \context_course::instance($courseid)->id;
+        foreach (get_file_storage()->get_area_files($ctx, 'course', $area, 0, 'filename', false) as $f) {
+            $out[$f->get_filename()] = $f->get_content();
+        }
+        return $out;
+    }
+
+    public function test_the_image_of_the_course_is_replaced_in_place_only_when_it_differs_and_the_summary_goes_with_it(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->preventResetByRollback();
+        $this->setAdminUser();
+        $a = $this->course_with_people();
+        $old = $this->colored_image(200);
+        $new = $this->colored_image(20);
+        $cid = (int) $a->course->id;
+        $citing = '<p>Novo</p><img src="@@PLUGINFILE@@/imagem-do-curso.png">';
+        $DB->update_record('course', (object) ['id' => $cid,
+            'summary' => '<p>Antigo</p><img src="@@PLUGINFILE@@/imagem-do-curso.png">', 'summaryformat' => FORMAT_HTML]);
+        $this->course_files($cid, 'overviewfiles', ['imagem-do-curso.png' => $old]);
+        $this->course_files($cid, 'summary', ['imagem-do-curso.png' => $old]);
+        $course = replacer::course($cid);
+        $before = $this->fingerprint($cid);
+
+        // The same bytes (the control): there is nothing to show and nothing to apply.
+        $same = updater::preview($course, $this->ops(['coursesettings' => ['image' => $this->course_image_meta($old)]]), '', null);
+        $this->assertNull($this->item($same, 'cs:image'));
+
+        // Other bytes: the preview shows it and changes nothing; the application changes the image and the summary that cites it.
+        $ops = $this->ops(['coursesettings' => ['image' => $this->course_image_meta($new), 'summary' => $citing]]);
+        $preview = updater::preview($course, $ops, '', null);
+        $item = $this->item($preview, 'cs:image');
+        $this->assertNotNull($item);
+        $this->assertSame('update', $item['group']);
+        $summary = $this->item($preview, 'cs:summary');
+        $this->assertSame('update', $summary['group'], 'the summary that cites the image that goes along is not held back');
+        $this->assertSame(['imagem-do-curso.png' => $old], $this->files_of($cid, 'overviewfiles'), 'the preview changes nothing');
+        $record = $this->apply($preview);
+        $this->assertSame((int) restorer::STATUS_FINISHED, (int) $record->status, (string) $record->errormessage);
+        $this->assertSame(['imagem-do-curso.png' => $new], $this->files_of($cid, 'overviewfiles'));
+        $this->assertSame(['imagem-do-curso.png' => $new], $this->files_of($cid, 'summary'));
+        $this->assertSame($citing, $DB->get_field('course', 'summary', ['id' => $cid]));
+        $this->assertSame($before, $this->fingerprint($cid), 'what the people did is untouched');
+        $statuses = array_column(json_decode($record->updateresult, true)['items'], 'status', 'id');
+        $this->assertSame('updated', $statuses['cs:image']);
+        $this->assertSame('updated', $statuses['cs:summary']);
+    }
+
+    public function test_a_course_without_image_receives_it_and_an_image_the_course_has_already_is_not_sent_again(): void {
+        $this->resetAfterTest();
+        $this->preventResetByRollback();
+        $this->setAdminUser();
+        $a = $this->course_with_people();
+        $cid = (int) $a->course->id;
+        $this->course_files($cid, 'overviewfiles', []);
+        $png = $this->colored_image(90);
+        $preview = updater::preview(
+            replacer::course($cid),
+            $this->ops(['coursesettings' => ['image' => $this->course_image_meta($png)]]),
+            '',
+            null
+        );
+        $this->assertSame('update', $this->item($preview, 'cs:image')['group']);
+        $record = $this->apply($preview);
+        $this->assertSame((int) restorer::STATUS_FINISHED, (int) $record->status, (string) $record->errormessage);
+        $this->assertSame(['imagem-do-curso.png' => $png], $this->files_of($cid, 'overviewfiles'));
+        // A second synchronization with the same image finds nothing to do.
+        $again = updater::preview(
+            replacer::course($cid),
+            $this->ops(['coursesettings' => ['image' => $this->course_image_meta($png)]]),
+            '',
+            null
+        );
+        $this->assertNull($this->item($again, 'cs:image'));
+        // The Moodle image under another name but with the same bytes counts as the same image.
+        $this->course_files($cid, 'overviewfiles', ['capa.png' => $png]);
+        $named = updater::preview(
+            replacer::course($cid),
+            $this->ops(['coursesettings' => ['image' => $this->course_image_meta($png)]]),
+            '',
+            null
+        );
+        $this->assertNull($this->item($named, 'cs:image'));
+    }
+
+    public function test_a_description_that_cites_the_image_that_goes_along_is_not_held_back_but_without_the_image_it_is(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->preventResetByRollback();
+        $this->setAdminUser();
+        $a = $this->course_with_people();
+        $cid = (int) $a->course->id;
+        $DB->update_record('course', (object) ['id' => $cid, 'summary' => '<p>Antigo</p>', 'summaryformat' => FORMAT_HTML]);
+        $this->course_files($cid, 'overviewfiles', []);
+        $this->course_files($cid, 'summary', []);
+        $png = $this->colored_image(60);
+        $cited = '<p>Com capa</p><img src="@@PLUGINFILE@@/imagem-do-curso.png">';
+        // The control: the same description without the image in the same update stays out (newfile), as for a section.
+        $without = updater::preview(replacer::course($cid), $this->ops(['coursesettings' => ['summary' => $cited]]), '', null);
+        $this->assertSame('newfile', $this->item($without, 'cs:summary')['reason']);
+        // With the image going along, the description goes and both areas end up with the image.
+        $with = updater::preview(
+            replacer::course($cid),
+            $this->ops(['coursesettings' => ['summary' => $cited, 'image' => $this->course_image_meta($png)]]),
+            '',
+            null
+        );
+        $this->assertSame('update', $this->item($with, 'cs:summary')['group']);
+        $this->assertSame('', $this->item($with, 'cs:summary')['reason']);
+        $record = $this->apply($with);
+        $this->assertSame((int) restorer::STATUS_FINISHED, (int) $record->status, (string) $record->errormessage);
+        $this->assertSame($cited, $DB->get_field('course', 'summary', ['id' => $cid]));
+        $this->assertSame(['imagem-do-curso.png' => $png], $this->files_of($cid, 'overviewfiles'));
+        $this->assertSame(['imagem-do-curso.png' => $png], $this->files_of($cid, 'summary'));
+    }
+
+    public function test_a_failure_after_the_image_was_replaced_puts_the_old_files_back(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->preventResetByRollback();
+        $this->setAdminUser();
+        $a = $this->course_with_people();
+        $cid = (int) $a->course->id;
+        $old = $this->colored_image(200);
+        $new = $this->colored_image(20);
+        $DB->update_record('course', (object) ['id' => $cid, 'summary' => '<p>Antigo</p>', 'summaryformat' => FORMAT_HTML]);
+        $this->course_files($cid, 'overviewfiles', ['imagem-do-curso.png' => $old]);
+        $this->course_files($cid, 'summary', ['imagem-do-curso.png' => $old, 'outra.png' => 'x']);
+        $preview = updater::preview(
+            replacer::course($cid),
+            $this->ops(['coursesettings' => ['image' => $this->course_image_meta($new),
+                'summary' => '<p>Outro</p><img src="@@PLUGINFILE@@/imagem-do-curso.png">']]),
+            '',
+            null
+        );
+        update_runner::$stephook = function (string $step): void {
+            if ($step === 'finish') {
+                throw new \RuntimeException('failure after the image');
+            }
+        };
+        $record = $this->apply($preview);
+        $this->assertSame((int) restorer::STATUS_FAILED, (int) $record->status);
+        $this->assertEquals(1, $record->rolledback, $record->errorcode . ' ' . $record->errormessage);
+        $this->assertSame(['imagem-do-curso.png' => $old], $this->files_of($cid, 'overviewfiles'));
+        $this->assertSame(['imagem-do-curso.png' => $old, 'outra.png' => 'x'], $this->files_of($cid, 'summary'));
+        $this->assertSame('<p>Antigo</p>', $DB->get_field('course', 'summary', ['id' => $cid]));
+    }
+
+    public function test_the_image_of_the_course_is_checked_like_the_images_of_a_page(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $a = $this->course_with_people();
+        $course = replacer::course((int) $a->course->id);
+        $png = $this->colored_image(20);
+        $good = $this->course_image_meta($png);
+        $jpg = $this->colored_image(20, 'jpg');
+        $cases = [
+            'wrong digest' => array_merge($good, ['sha256' => str_repeat('a', 64)]),
+            'wrong size' => array_merge($good, ['size' => $good['size'] + 1]),
+            'name outside the pattern' => array_merge($good, ['filename' => '../imagem-do-curso.png']),
+            'not an image' => $this->course_image_meta('not an image at all', 'imagem-do-curso.png'),
+            'type that is not the extension' => $this->course_image_meta($jpg, 'imagem-do-curso.png'),
+            'more than 2 MB' => array_merge($good, ['size' => 2097153]),
+        ];
+        foreach ($cases as $label => $meta) {
+            try {
+                updater::preview($course, $this->ops(['coursesettings' => ['image' => $meta]]), '', null);
+                $this->fail($label . ' was accepted');
+            } catch (\moodle_exception $e) {
+                $this->assertContains($e->errorcode, ['error:invalidoperations', 'error:draftfilenotfound'], $label);
+            }
+        }
+        // The control: a well described image of another accepted type is accepted.
+        $meta = $this->course_image_meta($jpg, 'imagem-do-curso.jpg');
+        $ok = updater::preview($course, $this->ops(['coursesettings' => ['image' => $meta]]), '', null);
+        $this->assertNotNull($this->item($ok, 'cs:image'));
+    }
+
     public function test_the_preview_is_of_one_account_one_course_and_one_use(): void {
         global $DB;
         $this->resetAfterTest();

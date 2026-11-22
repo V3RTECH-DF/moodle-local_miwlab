@@ -76,6 +76,7 @@ class update_runner {
             replacer::require_unchanged($course->id, $preview->signature, 0);
             $ops = json_decode($preview->operations, true);
             $pagefiles = update_page_files::sources($course, $ops, (int) $preview->id);
+            $courseimage = update_course_image::source($course, $ops, (int) $preview->id);
             $previewitems = json_decode($preview->items, true);
             $plan = self::reconcile($course, $ops, $previewitems, $full);
 
@@ -103,7 +104,7 @@ class update_runner {
             }
             update_page_files::apply($pagefiles, $plan, $journal);
             self::step('pagefiles');
-            self::apply($course, $ops, $plan, $appliers, $keys, $sections);
+            self::apply($course, $ops, $plan, $appliers, $keys, $sections, $courseimage);
             self::finish_order($course, $ops, $keys, $sections);
             self::step('finish');
             rebuild_course_cache($course->id, true);
@@ -371,6 +372,7 @@ class update_runner {
      * @param update_appliers $appliers
      * @param array $keys
      * @param array $sections
+     * @param array|null $image The verified image of the course, when the list carries one (1.14.0).
      */
     protected static function apply(
         stdClass $course,
@@ -378,7 +380,8 @@ class update_runner {
         array &$plan,
         update_appliers $appliers,
         array $keys,
-        array $sections
+        array $sections,
+        ?array $image = null
     ): void {
         $go = fn(string $id): bool => isset($plan['apply'][$id]);
         $done = function (string $id, string $status) use (&$plan): void {
@@ -444,6 +447,11 @@ class update_runner {
             }
         }
         $cs = $ops['coursesettings'];
+        if ($go('cs:image')) {
+            self::step('cs:image');
+            $appliers->course_image($image, (string) ($cs['summary'] ?? $course->summary));
+            $done('cs:image', 'updated');
+        }
         if ($go('cs:summary')) {
             self::step('cs:summary');
             $appliers->course_summary($cs['summary']);

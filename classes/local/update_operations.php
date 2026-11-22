@@ -26,8 +26,9 @@ use moodle_exception;
  * completiongradeitemnumber, completionpassgrade, type {column: int}}, availability? (JSON string or null), visible?, dates?
  * {column: int}, grademax?}, added[] {key, module, name, section (section id, or the key of a new section)}, retired[] {cmid},
  * sections[] {id, name?, summary?}, newsections[] {key, number, name}, retiredsections[] {id}, order[] {section, items[]},
- * sectionorder[], coursesettings {summary? (the HTML of the course description, 1.13.0), completion? {choice, aggregation, activityaggregation?, criteria[] {type 4, cmid | type 6,
- * grade | type 8, courseinstance}}, gradebook? {choice,
+ * sectionorder[], coursesettings {summary? (the HTML of the course description, 1.13.0), image? (the image of the course, 1.14.0:
+ * {draftitemid, filename imagem-do-curso.(png|jpg|gif), sha256, size}), completion? {choice, aggregation, activityaggregation?,
+ * criteria[] {type 4, cmid | type 6, grade | type 8, courseinstance}}, gradebook? {choice,
  * category
  {aggregation, aggregateonlygraded, keephigh, droplow}}, blocks[] {proposal add|replace|remove, choice keep|apply, name,
  instanceid?,
@@ -446,7 +447,7 @@ class update_operations {
         if ($c === [] || $c === null) {
             return [];
         }
-        $c = self::object($c, ['completion', 'gradebook', 'blocks', 'summary'], 'coursesettings');
+        $c = self::object($c, ['completion', 'gradebook', 'blocks', 'summary', 'image'], 'coursesettings');
         $out = [];
         $choice = function ($v): string {
             if (!in_array($v, ['keep', 'replace'], true)) {
@@ -484,6 +485,24 @@ class update_operations {
         if (array_key_exists('summary', $c)) {
             // The description of the course (1.13.0, issue 348): HTML as the MiwLab cleaned it, the way a section summary comes.
             $out['summary'] = self::html($c['summary']);
+        }
+        if (array_key_exists('image', $c)) {
+            // The image of the course (1.14.0, issue 355): the bytes come in the draft area, like the images of a Page.
+            $x = self::object($c['image'], ['draftitemid', 'filename', 'sha256', 'size'], 'course image');
+            $name = $x['filename'] ?? '';
+            $digest = $x['sha256'] ?? '';
+            if (
+                !is_string($name) || !preg_match('/^imagem-do-curso\.(png|jpg|gif)$/D', $name)
+                || !is_string($digest) || !preg_match('/^[a-f0-9]{64}$/D', $digest)
+            ) {
+                throw self::invalid('course image name or digest');
+            }
+            $size = self::int($x['size'] ?? null, 1);
+            if ($size > update_page_files::MAX_FILE_BYTES) {
+                throw self::invalid('course image size');
+            }
+            $out['image'] = ['draftitemid' => self::int($x['draftitemid'] ?? null, 1), 'filename' => $name,
+                'sha256' => $digest, 'size' => $size];
         }
         if (array_key_exists('gradebook', $c)) {
             $x = self::object($c['gradebook'], ['choice', 'category'], 'gradebook setting');

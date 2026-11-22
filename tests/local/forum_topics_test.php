@@ -359,7 +359,12 @@ final class forum_topics_test extends \advanced_testcase {
         $stored = $fs->create_file_from_pathname($record, $target);
         $result = forum_topics::create_from_archive((int) $course->id, $stored);
         $this->assertSame(['created' => 1, 'skipped' => 0, 'existing' => 0, 'note' => ''], $result);
-        $discussion = $DB->get_record('forum_discussions', ['forum' => $forums['Geral']->id, 'name' => 'Com anexo'], '*', MUST_EXIST);
+        $discussion = $DB->get_record(
+            'forum_discussions',
+            ['forum' => $forums['Geral']->id, 'name' => 'Com anexo'],
+            '*',
+            MUST_EXIST
+        );
         $this->assertEquals(1, $DB->get_field('forum_posts', 'attachment', ['id' => $discussion->firstpost]));
         // Something that is not an archive creates nothing and says why.
         $bad = $fs->create_file_from_string(['filename' => 'ruim.mbz'] + $record, 'isto nao e um arquivo');

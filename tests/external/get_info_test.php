@@ -44,6 +44,7 @@ final class get_info_test extends \advanced_testcase {
                 'forumtopics', 'coursesoverview', 'fullbackup', 'safeupdate',
                 'stampactivities', 'findcoursesbystamp', 'scales', 'competencies', 'completioncriteria',
                 'competencyrules', 'updatepagefiles', 'gamification', 'siteswitches',
+                'updateforumtopics', 'updatecoursesummary', 'updatecourseimage',
             ],
             $info['features']
         );

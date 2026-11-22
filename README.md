@@ -303,7 +303,7 @@ No parameters. Detects the plugin.
 
 `features` only grows: a new feature adds a name, and a name never changes meaning. 1.10.0 adds `stampactivities`,
 `findcoursesbystamp`, `scales`, `competencies` and `completioncriteria` (the safe update takes the completion criteria of the course
-by activity and by grade); 1.10.2 adds `competencyrules` (the rule "any child" and the move of the competencies of the MiwLab). 1.13.0 adds `updateforumtopics` (the safe update creates the forum topics that are not in their forum yet, through `local_miwlab_create_forum_topics`; a topic already there is never rewritten) and `updatecoursesummary` (`coursesettings.summary` changes the summary of the course in place, only when it differs; the old one goes back if the update fails). A client must not send `summary` to an earlier version.
+by activity and by grade); 1.10.2 adds `competencyrules` (the rule "any child" and the move of the competencies of the MiwLab). 1.13.0 adds `updateforumtopics` (the safe update creates the forum topics that are not in their forum yet, through `local_miwlab_create_forum_topics`; a topic already there is never rewritten) and `updatecoursesummary` (`coursesettings.summary` changes the summary of the course in place, only when it differs; the old one goes back if the update fails). A client must not send `summary` to an earlier version. 1.14.0 adds `updatecourseimage` (`coursesettings.image` replaces the image of the course in place, only when its bytes differ; the old image goes back if the update fails). A client must not send `image` to an earlier version.
 
 ### local_miwlab_get_module_types
 
@@ -875,7 +875,8 @@ the list announces (or that carries an activity of the course) refuses the call.
   "retired": [ { "cmid": 51 } ], "sections": [ { "id": 12, "name": "...", "summary": "..." } ],
   "newsections": [ { "key": "s1", "number": 5, "name": "..." } ], "retiredsections": [ { "id": 14 } ],
   "order": [ { "section": 12, "items": [52, "n1", 53] } ], "sectionorder": [12, "s1", 13],
-  "coursesettings": { "summary": "<html>", "completion": { "choice": "keep|replace", "aggregation": 1, "activityaggregation": 1,
+  "coursesettings": { "summary": "<html>", "image": { "draftitemid": 124, "filename": "imagem-do-curso.png", "sha256": "<64 hex>", "size": 20480 },
+                      "completion": { "choice": "keep|replace", "aggregation": 1, "activityaggregation": 1,
                                       "criteria": [ { "type": 4, "cmid": 52 }, { "type": 6, "grade": 60 }, { "type": 8, "courseinstance": 3 } ] },
                       "gradebook": { "choice": "keep|replace", "category": { "aggregation": 13 } },
                       "blocks": [ { "proposal": "add|replace|remove", "choice": "keep|apply", "name": "html", "instanceid": 5, "config": { } } ] } }
@@ -896,6 +897,14 @@ left out (`reason`), how many people have progress in it (`people`; counts only)
 that do not block (`warnings`), whether it could be deleted by hand (`suggestdelete`) and, for the course-wide items, `choice`,
 `canchoose` and `needsdiscard`. The progress is read **per activity**, with the same queries the replacement uses (the MiwLab account
 never counts).
+
+From 1.14.0, when `get_info` advertises `updatecourseimage`, `coursesettings.image` replaces the image of the course (the `overviewfiles`
+area) in place, **only when no file of that area has the same SHA-256**; it is one item of the preview, `cs:image`. The bytes come
+through the authenticated draft upload, like the images of a Page, and are checked the same way (size, SHA-256, signature equal to the
+extension, 2 MiB, 16 million pixels); the filename must be `imagem-do-curso.png`, `.jpg` or `.gif`. When the description sent in
+`summary` (or, without one, the description the course has) cites that name as `@@PLUGINFILE@@/imagem-do-curso.png`, the file is also put in
+the summary area of the course when it is missing or differs, and the description is no longer left out as `newfile` for it. The
+undo journal keeps the files it replaced, with their bytes.
 
 From 1.11.0, when `get_info` advertises `updatepagefiles`, a Page's `text` with `field: content` may also contain
 `files: [{ draftitemid: 123, filename: "imagem-1.png", sha256: "<64 lowercase hex characters>", size: 12345 }]`.

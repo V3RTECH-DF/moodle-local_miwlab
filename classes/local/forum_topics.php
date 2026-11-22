@@ -407,7 +407,8 @@ class forum_topics {
         global $CFG;
         require_once($CFG->libdir . '/filelib.php');
         if ($file->get_filesize() > 2 * self::MAX_JSON_BYTES) {
-            return ['created' => 0, 'skipped' => 1, 'existing' => 0, 'note' => get_string('error:forumtopicsinvalid', 'local_miwlab')];
+            return ['created' => 0, 'skipped' => 1, 'existing' => 0,
+                'note' => get_string('error:forumtopicsinvalid', 'local_miwlab')];
         }
         $tempdir = make_temp_directory('local_miwlab_topics/' . random_string(16));
         try {

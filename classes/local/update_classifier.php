@@ -231,10 +231,23 @@ class update_classifier {
                 'action' => 'update']);
         }
         $cs = $ops['coursesettings'];
+        if (isset($cs['image'])) {
+            // The image of the course (1.14.0, issue 355): in place, only when the bytes the course has are not these (compared by
+            // hash), together with the file of the description when the description cites it.
+            [$overview, $insummary] = update_course_image::needs(
+                (int) $course->id,
+                $cs['image'],
+                (string) ($cs['summary'] ?? $course->summary)
+            );
+            if ($overview || $insummary) {
+                $add(['id' => 'cs:image', 'group' => 'update', 'kind' => 'coursesetting', 'ref' => 'image', 'field' => 'image',
+                    'name' => (string) $course->fullname, 'action' => 'update', 'reason' => '']);
+            }
+        }
         if (isset($cs['summary']) && (string) $course->summary !== $cs['summary']) {
             // The description of the course (1.13.0, issue 348): changed in place, as a section summary is; the images it cites
             // follow the rule of the sections (a file the course does not have yet stays out, with the reason).
-            $new = self::cites_new_course_file((int) $course->id, $cs['summary']);
+            $new = self::cites_new_course_file((int) $course->id, $cs['summary'], $cs['image']['filename'] ?? null);
             $add(['id' => 'cs:summary', 'group' => $new ? 'skip' : 'update', 'kind' => 'coursesetting', 'ref' => 'summary',
                 'field' => 'summary', 'name' => (string) $course->fullname, 'action' => $new ? 'skip' : 'update',
                 'reason' => $new ? 'newfile' : '']);
@@ -606,9 +619,10 @@ class update_classifier {
      *
      * @param int $courseid
      * @param string $html
+     * @param string|null $carried The name of the image that goes in the same update (1.14.0): it is not new, it comes along.
      * @return bool
      */
-    protected static function cites_new_course_file(int $courseid, string $html): bool {
+    protected static function cites_new_course_file(int $courseid, string $html, ?string $carried = null): bool {
         $names = self::cited_files($html);
         if (!$names) {
             return false;
@@ -627,7 +641,7 @@ class update_classifier {
             $have['/' . $f->get_filename()] = true;
         }
         foreach ($names as $name) {
-            if (!isset($have['/' . $name])) {
+            if (!isset($have['/' . $name]) && $name !== $carried) {
                 return true;
             }
         }

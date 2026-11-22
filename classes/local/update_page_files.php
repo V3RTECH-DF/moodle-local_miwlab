@@ -101,7 +101,7 @@ class update_page_files {
      * @param array $meta
      * @return string Canonical MIME type obtained from the accepted image signature.
      */
-    protected static function check_image(\stored_file $file, array $meta): string {
+    public static function check_image(\stored_file $file, array $meta): string {
         if ((int) $file->get_filesize() !== $meta['size'] || (int) $file->get_filesize() > self::MAX_FILE_BYTES) {
             throw new \moodle_exception('error:invalidoperations', 'local_miwlab', '', 'page file size');
         }

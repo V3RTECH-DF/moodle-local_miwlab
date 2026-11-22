@@ -248,6 +248,16 @@ class update_appliers {
     }
 
     /**
+     * The image of the course (1.14.0, issue 355), in place; the journal keeps what it takes out and puts in.
+     *
+     * @param array|null $entry The verified image (update_course_image::source).
+     * @param string $summary The description the course will have after the update.
+     */
+    public function course_image(?array $entry, string $summary): void {
+        update_course_image::apply($this->course, $entry, $summary, $this->journal);
+    }
+
+    /**
      * The description of the course (1.13.0, issue 348): the summary as HTML, in place; the journal keeps the one it had.
      *
      * @param string $html

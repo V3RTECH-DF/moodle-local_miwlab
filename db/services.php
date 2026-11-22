@@ -251,8 +251,9 @@ $functions = [
     ],
     'local_miwlab_create_forum_topics' => [
         'classname' => 'local_miwlab\external\create_forum_topics',
-        'description' => 'Creates, in a course that already exists, the opening topics of its forums that the MiwLab marked and that '
-            . 'are not there yet (same forum, same title); a topic already there is left as it is. No notification is sent.',
+        'description' => 'Creates, in a course that already exists, the opening topics of its forums that the MiwLab marked '
+            . 'and that are not there yet (same forum, same title); a topic already there is left as it is. '
+            . 'No notification is sent.',
         'type' => 'write',
         'capabilities' => 'local/miwlab:updatecourse, mod/forum:startdiscussion',
     ],

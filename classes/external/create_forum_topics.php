@@ -43,7 +43,12 @@ class create_forum_topics extends base {
         return new external_function_parameters([
             'courseid' => new external_value(PARAM_INT, 'The course'),
             'draftitemid' => new external_value(PARAM_INT, 'Draft area where the package of the topics was uploaded'),
-            'filename' => new external_value(PARAM_FILE, 'Name of the package in the draft area; empty: the only file there', VALUE_DEFAULT, ''),
+            'filename' => new external_value(
+                PARAM_FILE,
+                'Name of the package in the draft area; empty: the only file there',
+                VALUE_DEFAULT,
+                ''
+            ),
         ]);
     }
 
