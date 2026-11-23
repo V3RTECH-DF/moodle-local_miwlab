@@ -25,8 +25,10 @@ use moodle_exception;
  * Shape (JSON): activities[] {cmid, name?, text? {field, html}, completion? {completion, completionview, completionexpected,
  * completiongradeitemnumber, completionpassgrade, type {column: int}}, availability? (JSON string or null), visible?, dates?
  * {column: int}, grademax?}, added[] {key, module, name, section (section id, or the key of a new section)}, retired[] {cmid},
- * sections[] {id, name?, summary?}, newsections[] {key, number, name}, retiredsections[] {id}, order[] {section, items[]},
- * sectionorder[], coursesettings {summary? (the HTML of the course description, 1.13.0), image? (the image of the course, 1.14.0:
+ * sections[] {id, name?, summary?, files? (1.15.0, only with summary)}, newsections[] {key, number, name},
+ * retiredsections[] {id}, order[] {section, items[]},
+ * sectionorder[], questions[] (the questions of a quiz, 1.15.0: question_list),
+ * coursesettings {summary? (the HTML of the course description, 1.13.0), image? (the image of the course, 1.14.0:
  * {draftitemid, filename imagem-do-curso.(png|jpg|gif), sha256, size}), completion? {choice, aggregation, activityaggregation?,
  * criteria[] {type 4, cmid | type 6, grade | type 8, courseinstance}}, gradebook? {choice,
  * category
@@ -45,6 +47,7 @@ class update_operations {
     /** @var string[] Keys of the list. */
     const TOP = [
         'activities', 'added', 'retired', 'sections', 'newsections', 'retiredsections', 'order', 'sectionorder', 'coursesettings',
+        'questions',
     ];
 
     /** @var string[] Keys of an activity operation. */
@@ -106,6 +109,10 @@ class update_operations {
                 $out[$key] = self::coursesettings($list, $courseid, $ctx);
                 continue;
             }
+            if ($key === 'questions') {
+                $out[$key] = question_list::parse($list, $cms);
+                continue;
+            }
             if (!is_array($list)) {
                 throw self::invalid($key . ' is not a list');
             }
@@ -158,13 +165,19 @@ class update_operations {
             $out['retired'][$i] = ['cmid' => self::cm_ref($r['cmid'] ?? null, $cms)];
         }
         foreach ($out['sections'] as $i => $s) {
-            $s = self::object($s, ['id', 'name', 'summary'], 'section');
+            $s = self::object($s, ['id', 'name', 'summary', 'files'], 'section');
             $row = ['id' => self::section_id($s['id'] ?? null, $sections)];
             if (array_key_exists('name', $s)) {
                 $row['name'] = self::text($s['name'], 255);
             }
             if (array_key_exists('summary', $s)) {
                 $row['summary'] = self::html($s['summary']);
+            }
+            if (array_key_exists('files', $s)) {
+                if (!isset($row['summary'])) {
+                    throw self::invalid('section files need the summary');
+                }
+                $row['files'] = self::files($s['files'], false, update_page_files::MAX_PER_FIELD);
             }
             $out['sections'][$i] = $row;
         }
@@ -223,28 +236,8 @@ class update_operations {
             }
             $row['text'] = ['field' => $field, 'html' => self::html($t['html'] ?? null)];
             if (array_key_exists('files', $t)) {
-                if ($field !== 'content' || !is_array($t['files']) || count($t['files']) > 4) {
-                    throw self::invalid('page files');
-                }
-                $files = [];
-                foreach ($t['files'] as $f) {
-                    $f = self::object($f, ['draftitemid', 'filename', 'sha256', 'size'], 'page file');
-                    $name = $f['filename'] ?? '';
-                    $digest = $f['sha256'] ?? '';
-                    if (
-                        !is_string($name) || !preg_match('/^imagem-[1-4]\.(png|jpg|jpeg|gif)$/D', $name)
-                        || isset($files[$name]) || !is_string($digest) || !preg_match('/^[a-f0-9]{64}$/D', $digest)
-                    ) {
-                        throw self::invalid('page file name or digest');
-                    }
-                    $size = self::int($f['size'] ?? null, 1);
-                    if ($size > update_page_files::MAX_FILE_BYTES) {
-                        throw self::invalid('page file size');
-                    }
-                    $files[$name] = ['draftitemid' => self::int($f['draftitemid'] ?? null, 1),
-                        'filename' => $name, 'sha256' => $digest, 'size' => $size];
-                }
-                $row['text']['files'] = array_values($files);
+                // The figures by number (1.11.0) are only of the content of a Page; by digest (1.15.0), of any text.
+                $row['text']['files'] = self::files($t['files'], $field === 'content', update_page_files::MAX_PER_FIELD);
             }
         }
         if (array_key_exists('completion', $a)) {
@@ -548,6 +541,47 @@ class update_operations {
             }
         }
         return $out;
+    }
+
+    /**
+     * The files that come with a field, checked by name and digest before any byte is read.
+     *
+     * @param mixed $list
+     * @param bool $numbered Whether the figures by number are taken.
+     * @param int $most Most of each kind of name.
+     * @return array
+     */
+    public static function files($list, bool $numbered, int $most): array {
+        if (!is_array($list)) {
+            throw self::invalid('files');
+        }
+        $files = [];
+        $count = ['numbered' => 0, 'hashed' => 0];
+        foreach ($list as $f) {
+            $f = self::object($f, ['draftitemid', 'filename', 'sha256', 'size'], 'file');
+            $name = $f['filename'] ?? '';
+            $digest = $f['sha256'] ?? '';
+            if (!is_string($name) || isset($files[$name]) || !is_string($digest) || !preg_match('/^[a-f0-9]{64}$/D', $digest)) {
+                throw self::invalid('file name or digest');
+            }
+            if ($numbered && preg_match(update_page_files::NUMBERED, $name)) {
+                $count['numbered']++;
+            } else if (preg_match(update_page_files::HASHED, $name, $parts) && $parts[1] === $digest) {
+                $count['hashed']++;
+            } else {
+                throw self::invalid('file name or digest');
+            }
+            if (max($count) > $most) {
+                throw self::invalid('too many files in a field');
+            }
+            $size = self::int($f['size'] ?? null, 1);
+            if ($size > update_page_files::MAX_FILE_BYTES) {
+                throw self::invalid('file size');
+            }
+            $files[$name] = ['draftitemid' => self::int($f['draftitemid'] ?? null, 1),
+                'filename' => $name, 'sha256' => $digest, 'size' => $size];
+        }
+        return array_values($files);
     }
 
     /**

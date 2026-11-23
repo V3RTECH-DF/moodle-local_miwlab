@@ -150,6 +150,7 @@ class preview_update extends base {
                 ),
                 'canchoose' => new external_value(PARAM_BOOL, 'Course-wide item: replacing or removing it is possible'),
                 'needsdiscard' => new external_value(PARAM_BOOL, 'Replacing it makes somebody lose the completion of the course'),
+                'questions' => get_question_state::details(),
             ])),
         ]);
     }

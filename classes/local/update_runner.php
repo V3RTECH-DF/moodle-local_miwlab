@@ -62,6 +62,7 @@ class update_runner {
         $backupname = '';
         $expires = 0;
         $preview = null;
+        $transaction = null;
         try {
             $course = replacer::course((int) $record->courseid);
             $context = \context_course::instance($course->id);
@@ -106,12 +107,21 @@ class update_runner {
             self::step('pagefiles');
             self::apply($course, $ops, $plan, $appliers, $keys, $sections, $courseimage);
             self::finish_order($course, $ops, $keys, $sections);
+            // The questions go last and in one transaction, up to the end of the update: no slot and no question can be left
+            // half made, and a failure after them takes them back (the journal takes back the rest).
+            $quizzes = self::quizzes_to_write($plan, $ops);
+            if ($quizzes) {
+                $transaction = $DB->start_delegated_transaction();
+                self::apply_questions($course, $quizzes, $previewitems, $plan, $pagefiles);
+            }
             self::step('finish');
             rebuild_course_cache($course->id, true);
             \cache_helper::purge_by_event('changesincourse');
             $state = replacer::course_state((int) $course->id);
             replacer::keep_backup($context, $backupname, $backup, $expires);
-            $backup = null;
+            if (!$transaction) {
+                $backup = null;
+            }
             $DB->update_record('local_miwlab_restores', (object) [
                 'id' => $record->id,
                 'fullbackup' => $expires > 0 ? 1 : 0,
@@ -121,7 +131,23 @@ class update_runner {
                 'progress' => 1,
                 'timefinished' => time(),
             ]);
+            if ($transaction) {
+                self::step('commit');
+                foreach ($quizzes as $quiz) {
+                    if ($plan['results']['q:' . $quiz['cmid']]['status'] === 'updated') {
+                        quiz_questions_writer::require_untouched((int) $quiz['instance'], (int) $quiz['cmid']);
+                    }
+                }
+                $transaction->allow_commit();
+                $transaction = null;
+                $backup = null;
+            }
         } catch (\Throwable $e) {
+            if ($transaction) {
+                // Before anything else: the questions, the backup kept and the record go back with it.
+                $DB->force_transaction_rollback();
+                $transaction = null;
+            }
             $code = $e instanceof moodle_exception ? substr($e->errorcode, 0, 100) : 'unexpected';
             $reason = restorer::reason($e);
             $rolledback = 0;
@@ -224,6 +250,9 @@ class update_runner {
                 $was = $now[$id]['reason'];
                 $reason = $was === 'progress' || $was === '' ? 'progresschanged' : $was;
                 $results[$id] = $base + ['status' => 'skipped', 'reason' => $reason];
+            } else if (isset($p['state']) && $p['state'] !== ($now[$id]['state'] ?? '')) {
+                // The questions of the quiz are not the ones the preview showed.
+                $results[$id] = $base + ['status' => 'skipped', 'reason' => 'questionschanged'];
             } else if (!empty($now[$id]['needsdiscard']) && $p['action'] === 'update' && !$full) {
                 // The completion of the course: it only goes with the conscious confirmation and the full backup.
                 $results[$id] = $base + ['status' => 'skipped', 'reason' => 'progresschanged'];
@@ -306,6 +335,7 @@ class update_runner {
         } finally {
             fulldelete($tempdir);
         }
+        update_page_files::give_webp_its_type((int) $course->id);
         // What the restore created, found by what was there before.
         $newcms = [];
         foreach ($DB->get_records('course_modules', ['course' => $course->id], 'id') as $cm) {
@@ -473,6 +503,64 @@ class update_runner {
                 $appliers->block($b);
                 $done('cs:block:' . $i, $b['proposal'] === 'add' ? 'added' : ($b['proposal'] === 'remove' ? 'hidden' : 'updated'));
             }
+        }
+    }
+
+    /**
+     * The quizzes whose questions are going to be written.
+     *
+     * @param array $plan
+     * @param array $ops
+     * @return array Each one of the list, with the id of the instance.
+     */
+    protected static function quizzes_to_write(array $plan, array $ops): array {
+        global $DB;
+        $quizzes = [];
+        foreach (($ops['questions'] ?? []) as $q) {
+            if (isset($plan['apply']['q:' . $q['cmid']])) {
+                $q['instance'] = (int) $DB->get_field('course_modules', 'instance', ['id' => $q['cmid']], MUST_EXIST);
+                $quizzes[] = $q;
+            }
+        }
+        return $quizzes;
+    }
+
+    /**
+     * Writes the questions, each quiz decided once more on what it is now.
+     *
+     * @param stdClass $course
+     * @param array $quizzes
+     * @param array $previewitems
+     * @param array $plan
+     * @param array $files The verified files of the update.
+     */
+    protected static function apply_questions(
+        stdClass $course,
+        array $quizzes,
+        array $previewitems,
+        array &$plan,
+        array $files
+    ): void {
+        $shown = [];
+        foreach ($previewitems as $item) {
+            $shown[$item['id']] = $item['state'] ?? '';
+        }
+        rebuild_course_cache($course->id, true);
+        $modinfo = get_fast_modinfo($course->id);
+        foreach ($quizzes as $q) {
+            $id = 'q:' . $q['cmid'];
+            self::step($id);
+            $decision = quiz_questions::decide($modinfo->get_cm($q['cmid']), $q);
+            if ($decision->action !== 'update' || $decision->state !== $shown[$id]) {
+                // Changed in the middle of this run.
+                $plan['results'][$id]['status'] = 'skipped';
+                $plan['results'][$id]['reason'] = $decision->reason ?: 'questionschanged';
+                continue;
+            }
+            quiz_questions_writer::apply($decision, $q['draw'], update_page_files::of_questions($files, (int) $q['cmid']));
+            self::step('questions:written');
+            quiz_questions_writer::require_untouched((int) $q['instance'], (int) $q['cmid']);
+            $plan['results'][$id]['status'] = 'updated';
         }
     }
 

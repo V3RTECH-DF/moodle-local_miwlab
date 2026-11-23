@@ -296,5 +296,24 @@ function xmldb_local_miwlab_upgrade($oldversion) {
         // get_info is what tells the MiwLab it can send the image.
         upgrade_plugin_savepoint(true, 2026112201, 'local', 'miwlab');
     }
+    if ($oldversion < 2026112202) {
+        // 1.15.0 (issue 349): the questions of the MiwLab added to a quiz that is in Moodle. The table records which question
+        // went to which quiz (no person). The role gets three permissions of the quiz and of the question bank (ensure_role);
+        // the new function comes to the "MiwLab (local_miwlab)" service when Moodle reads db/services.php right after this
+        // step, so the same key reaches it.
+        $table = new xmldb_table('local_miwlab_questions');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('cmid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('questionkey', XMLDB_TYPE_CHAR, '60', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('entryid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_index('cmid-questionkey', XMLDB_INDEX_UNIQUE, ['cmid', 'questionkey']);
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+        \local_miwlab\local\provisioning::ensure_role();
+        upgrade_plugin_savepoint(true, 2026112202, 'local', 'miwlab');
+    }
     return true;
 }

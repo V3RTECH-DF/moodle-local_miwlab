@@ -200,8 +200,11 @@ class update_classifier {
             if (array_key_exists('name', $s) && (string) $rec->name !== $s['name']) {
                 $add($base + ['id' => 's:' . $s['id'] . ':name', 'field' => 'name', 'group' => 'update', 'action' => 'update']);
             }
-            if (array_key_exists('summary', $s) && (string) $rec->summary !== $s['summary']) {
-                $new = self::cites_new_section_file((int) $course->id, (int) $s['id'], $s['summary']);
+            if (
+                array_key_exists('summary', $s) && ((string) $rec->summary !== $s['summary']
+                    || (!empty($s['files']) && self::cites_new_section_file((int) $course->id, (int) $s['id'], $s['summary'])))
+            ) {
+                $new = self::cites_new_section_file((int) $course->id, (int) $s['id'], $s['summary'], $s['files'] ?? []);
                 $add($base + ['id' => 's:' . $s['id'] . ':summary', 'field' => 'summary', 'group' => $new ? 'skip' : 'update',
                     'action' => $new ? 'skip' : 'update', 'reason' => $new ? 'newfile' : '']);
             }
@@ -229,6 +232,19 @@ class update_classifier {
         if ($ops['sectionorder']) {
             $add(['id' => 'so', 'group' => 'update', 'kind' => 'order', 'ref' => 'sections', 'field' => 'sectionorder',
                 'action' => 'update']);
+        }
+        foreach (($ops['questions'] ?? []) as $q) {
+            // The questions of the MiwLab (1.15.0, issue 349). With nothing to do, there is no item.
+            $cm = isset($modinfo->cms[$q['cmid']]) ? $modinfo->cms[$q['cmid']] : null;
+            $decision = quiz_questions::decide($cm, $q);
+            if ($decision->action === 'none') {
+                continue;
+            }
+            $add(['id' => 'q:' . $q['cmid'], 'group' => $decision->action === 'skip' ? 'skip' : 'update', 'kind' => 'activity',
+                'ref' => (string) $q['cmid'], 'module' => $cm ? $cm->modname : '', 'name' => $cm ? (string) $cm->name : '',
+                'section' => $cm ? $sectionname((int) $cm->section) : '', 'field' => 'questions', 'action' => $decision->action,
+                'reason' => $decision->reason, 'people' => $decision->people, 'warnings' => $decision->warnings,
+                'questions' => $decision->details, 'state' => $decision->state]);
         }
         $cs = $ops['coursesettings'];
         if (isset($cs['image'])) {
@@ -560,10 +576,8 @@ class update_classifier {
         }
         $fs = get_file_storage();
         $have = [];
-        if ($cm->modname === 'page' && $field === 'content') {
-            foreach ($files as $file) {
-                $have['/' . $file['filename']] = true;
-            }
+        foreach ($files as $file) {
+            $have['/' . $file['filename']] = true;
         }
         $areas = $cm->modname === 'page' && $field === 'content' ? ['content'] : [$field, 'intro', 'content'];
         foreach ($areas as $area) {
@@ -585,9 +599,10 @@ class update_classifier {
      * @param int $courseid
      * @param int $sectionid
      * @param string $html
+     * @param array $files The files that come with the summary.
      * @return bool
      */
-    protected static function cites_new_section_file(int $courseid, int $sectionid, string $html): bool {
+    protected static function cites_new_section_file(int $courseid, int $sectionid, string $html, array $files = []): bool {
         $names = self::cited_files($html);
         if (!$names) {
             return false;
@@ -605,6 +620,9 @@ class update_classifier {
             ) as $f
         ) {
             $have['/' . $f->get_filename()] = true;
+        }
+        foreach ($files as $file) {
+            $have['/' . $file['filename']] = true;
         }
         foreach ($names as $name) {
             if (!isset($have['/' . $name])) {

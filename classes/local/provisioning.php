@@ -90,6 +90,8 @@ class provisioning {
      *   discard and the content backup) sets "include users" off explicitly and checks it after setting (backup_scope), so the
      *   permission changes nothing for them.
      *
+     * - mod/quiz:manage, moodle/question:useall and moodle/question:moveall (1.15.0, issue 349): the questions of the MiwLab
+     *   added by local_miwlab_apply_update to a quiz without attempts. No question is deleted.
      * - local/miwlab:managegamification, local/miwlab:manageconfig and moodle/badges:createbadge (1.12.0, issue 333):
      *   local_miwlab_apply_gamification (badges and the progress bar on a course that exists) and
      *   local_miwlab_enable_features (a fixed list of site switches, only ever turned on).
@@ -129,6 +131,11 @@ class provisioning {
         // replacement) creates the question categories and questions only for an account that can manage and add them there.
         'moodle/question:managecategory',
         'moodle/question:add',
+        // 1.15.0 (issue 349): the questions of the MiwLab added to a quiz that is in Moodle. Manage the slots of the quiz, use
+        // the questions of its bank and, with a draw, move them inside that bank into the one set. No permission to delete.
+        'mod/quiz:manage',
+        'moodle/question:useall',
+        'moodle/question:moveall',
         // 1.7.0 (issue 178): the opening topics of the forums. Reading the topics the staff started in a course; recreating them in
         // the restored course as the account of the integration (the news forum needs addnews, a file needs createattachment).
         'local/miwlab:readforumtopics',

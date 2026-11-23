@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="local/miwlab/db" VERSION="20261022" COMMENT="XMLDB file for Moodle local/miwlab"
+<XMLDB PATH="local/miwlab/db" VERSION="20261122" COMMENT="XMLDB file for Moodle local/miwlab"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd"
 >
@@ -99,6 +99,21 @@
       <INDEXES>
         <INDEX NAME="timeexpires" UNIQUE="false" FIELDS="timeexpires"/>
         <INDEX NAME="courseid-filename" UNIQUE="true" FIELDS="courseid, filename"/>
+      </INDEXES>
+    </TABLE>
+    <TABLE NAME="local_miwlab_questions" COMMENT="Questions of the MiwLab that went to a quiz (1.15.0): each one goes once. No data of a person.">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="cmid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="The quiz (course module)"/>
+        <FIELD NAME="questionkey" TYPE="char" LENGTH="60" NOTNULL="true" SEQUENCE="false" COMMENT="The identifier of the question in the MiwLab"/>
+        <FIELD NAME="entryid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="The entry in the question bank when it went"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="cmid-questionkey" UNIQUE="true" FIELDS="cmid, questionkey"/>
       </INDEXES>
     </TABLE>
   </TABLES>

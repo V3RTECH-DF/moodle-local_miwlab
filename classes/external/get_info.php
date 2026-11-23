@@ -44,6 +44,9 @@ class get_info extends base {
         'updateforumtopics', 'updatecoursesummary',
         // 1.14.0: the image of the course carried by the safe update, replaced in place when its bytes differ (issue 355).
         'updatecourseimage',
+        // 1.15.0: the questions written in the MiwLab added to a quiz that is in Moodle by the safe update (issue 349).
+        'updatequizquestions',
+        'updatehashedfiles',
     ];
 
     /** @var string[] Add-ons of Moodle (components of other developers) whose presence the MiwLab asks. */

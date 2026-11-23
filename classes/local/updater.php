@@ -198,6 +198,7 @@ class updater {
             'choice' => (string) ($i['choice'] ?? ''),
             'canchoose' => (bool) ($i['canchoose'] ?? false),
             'needsdiscard' => (bool) ($i['needsdiscard'] ?? false),
+            'questions' => ($i['questions'] ?? []) + quiz_questions::DETAILS,
         ];
     }
 
@@ -404,6 +405,8 @@ class updater {
      */
     public static function cleanup(?int $now = null): void {
         global $DB;
+        // What went to a quiz that is not there any more says nothing.
+        $DB->delete_records_select(quiz_questions::TABLE, 'cmid NOT IN (SELECT id FROM {course_modules})');
         $now = $now ?? time();
         $old = $DB->get_records_select('local_miwlab_updates', 'timeexpires < :limit', ['limit' => $now - DAYSECS]);
         $fs = get_file_storage();

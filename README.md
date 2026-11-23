@@ -82,6 +82,8 @@ With that token, the MiwLab uses the plugin to do ten things Moodle core web ser
    or left out with the reason), changing nothing; `local_miwlab_apply_update` applies exactly that preview, in the background,
    after a backup without people. Grades, submissions, attempts, posts and the completion of the people stay as they are. What is
    course-wide (blocks, completion criteria of the course, gradebook of the course) is a choice of whoever sends, "keep" by default.
+   From 1.15.0 it also adds the questions written in the MiwLab to a quiz that is in Moodle: each one once, never in a quiz with
+   attempts, and without deleting any question from the bank.
 12. **Stamp the activities of a course that was already in Moodle, and find the copies of a course by it** (1.10.0): the course ID number
    is lost when a course is copied in Moodle, but the ID number of the activities is kept. `local_miwlab_stamp_activities` writes
    `miwlab:<course>:a:<activity>` into the ID number of the activities the MiwLab names, never over a value that is there (it says which it
@@ -162,6 +164,7 @@ capability and the function that needs it:
 | `local/miwlab:hidecourse`, `moodle/course:visibility` | `local_miwlab_hide_course` (1.5.0) |
 | `local/miwlab:updatecourse` (1.9.0), `moodle/backup:backupcourse`, `moodle/restore:restorecourse`, `moodle/restore:configure`, `moodle/restore:rolldates` | `local_miwlab_preview_update`, `local_miwlab_apply_update`: all of them, in the course, and `moodle/backup:userinfo` too when the call confirms a discard (the completion criteria of a course somebody concluded). From 1.10.0 `local/miwlab:updatecourse` alone is what `local_miwlab_stamp_activities` asks (it writes the ID number of activities, never over a value) |
 | `moodle/question:managecategory`, `moodle/question:add` | `local_miwlab_restore_course`, `local_miwlab_replace_course` (1.6.0): a package with the content of a course imported from Moodle brings its question bank, and Moodle's restore creates question categories and questions only for an account that can manage and add them in the course (without them it refuses the package before restoring it) |
+| `mod/quiz:manage`, `moodle/question:useall`, `moodle/question:moveall` | `local_miwlab_apply_update` (1.15.0): the questions of the MiwLab added to a quiz that has no attempts; `moveall` only to bring, inside the bank of that quiz, its questions into the one set of a draw. No question is deleted |
 | `moodle/backup:userinfo` (1.9.0) | the full backup, with the people, that `local_miwlab_replace_course` makes before a replacement with `forcediscard` (kept in the course backup area, deleted after `keepdays` days, 30 to 365). Only that path: the other backups set users off and check it |
 | `local/miwlab:backupcourse`, `moodle/backup:backupcourse` | `local_miwlab_backup_course`, `local_miwlab_get_backup_status`, `local_miwlab_get_backup_chunk`, `local_miwlab_delete_backup` (1.6.0): the backup of the content of a course, without any data of a person, in the course |
 | `moodle/badges:deletebadge`, `moodle/badges:configurecriteria` | `local_miwlab_replace_course` (1.6.0): the course badges of the old content are deleted before the restore, and the ones the package brings are activated; `local_miwlab_restore_course` (1.6.0): the badges the package brings are activated only with `moodle/badges:configurecriteria` in the new course (without it they stay inactive) |
@@ -188,7 +191,7 @@ A key made by hand works too:
    on, the authentication method of the account must be enabled (Site administration > Plugins > Authentication >
    Manage authentication): an account with the web service authentication needs it on.
 3. Site administration > Server > Web services > External services: in the service used by the MiwLab key (or a new
-   one, with any name but "MiwLab (local_miwlab)", the name of the plugin service), add the twenty-four `local_miwlab_*` functions below and enable **Can upload files** (the package is uploaded with
+   one, with any name but "MiwLab (local_miwlab)", the name of the plugin service), add the `local_miwlab_*` functions below and enable **Can upload files** (the package is uploaded with
    `webservice/upload.php` before the restore). **Can download files** stays off: the backup of the content of a course
    comes in parts through `local_miwlab_get_backup_chunk`.
 4. Give the role of the integration account:
@@ -204,6 +207,9 @@ A key made by hand works too:
      to hide the old course: `local/miwlab:hidecourse` and `moodle/course:visibility`;
    - to restore or replace with a package that brings a question bank (the content of a course imported from Moodle, 1.6.0):
      `moodle/question:managecategory` and `moodle/question:add`, in the categories (or at site level);
+   - to add the questions of the MiwLab to a quiz that is in Moodle (1.15.0): `mod/quiz:manage`, `moodle/question:add`,
+     `moodle/question:managecategory`, `moodle/question:useall` and, for a quiz with a draw, `moodle/question:moveall`, in the
+     course (or its category, or at site level), together with the ones of the safe update;
    - to back up the content of a course for the MiwLab (1.6.0): `local/miwlab:backupcourse` and `moodle/backup:backupcourse`,
      in the course (or its category, or at site level);
    - to read the opening topics the staff of a course started in its forums (1.7.0): `local/miwlab:readforumtopics`, in the
@@ -303,7 +309,7 @@ No parameters. Detects the plugin.
 
 `features` only grows: a new feature adds a name, and a name never changes meaning. 1.10.0 adds `stampactivities`,
 `findcoursesbystamp`, `scales`, `competencies` and `completioncriteria` (the safe update takes the completion criteria of the course
-by activity and by grade); 1.10.2 adds `competencyrules` (the rule "any child" and the move of the competencies of the MiwLab). 1.13.0 adds `updateforumtopics` (the safe update creates the forum topics that are not in their forum yet, through `local_miwlab_create_forum_topics`; a topic already there is never rewritten) and `updatecoursesummary` (`coursesettings.summary` changes the summary of the course in place, only when it differs; the old one goes back if the update fails). A client must not send `summary` to an earlier version. 1.14.0 adds `updatecourseimage` (`coursesettings.image` replaces the image of the course in place, only when its bytes differ; the old image goes back if the update fails). A client must not send `image` to an earlier version.
+by activity and by grade); 1.10.2 adds `competencyrules` (the rule "any child" and the move of the competencies of the MiwLab). 1.13.0 adds `updateforumtopics` (the safe update creates the forum topics that are not in their forum yet, through `local_miwlab_create_forum_topics`; a topic already there is never rewritten) and `updatecoursesummary` (`coursesettings.summary` changes the summary of the course in place, only when it differs; the old one goes back if the update fails). A client must not send `summary` to an earlier version. 1.14.0 adds `updatecourseimage` (`coursesettings.image` replaces the image of the course in place, only when its bytes differ; the old image goes back if the update fails). A client must not send `image` to an earlier version. 1.15.0 adds `updatequizquestions` (`questions` adds the questions written in the MiwLab to a quiz that is in Moodle, and `local_miwlab_get_question_state` tells what is pending). A client must not send `questions` to an earlier version.
 
 ### local_miwlab_get_module_types
 
@@ -911,14 +917,87 @@ From 1.11.0, when `get_info` advertises `updatepagefiles`, a Page's `text` with 
 Upload each image through Moodle's authenticated draft upload first. Only the caller's root draft files are accepted.
 The canonical filename must be `imagem-1` through `imagem-4`, with a `png`, `jpg`, `jpeg` or `gif` extension, and must be
 referenced by the HTML as `@@PLUGINFILE@@/filename`. The image signature must match its extension; the MIME type is derived
-from the verified signature. Limits are four images per Page, 24 per preview, 2 MiB per image, 48 MiB per preview and
-16 megapixels per image. Other modules and file areas do not accept `files`.
+from the verified signature. Limits are four numbered images per Page (and, from 1.15.0, four more by digest), 24 per preview,
+2 MiB per image, 48 MiB per preview and 16 megapixels per image. Numbered images are only of the content of a Page; images by
+digest are described below.
 
 The preview stages verified bytes privately, independently of the draft's lifetime. Application verifies the staged bytes
 and target again, adds only files needed by an accepted text operation and never overwrites or removes a previous content file.
 An existing name with identical bytes is reused; different bytes refuse the request. The failure journal removes newly added
 files and restores the previous text. A Page whose HTML already matches but lacks the referenced bytes can also be repaired.
 Older clients can continue sending text without `files`; missing references keep the existing `newfile` refusal.
+
+#### Images named by their digest (1.15.0)
+
+When `get_info` advertises `updatehashedfiles`, a text may bring images named `miwlab-<sha256>.(png|jpg|gif|webp)`, where the
+digest in the name is the one of the bytes, each as `{draftitemid, filename, sha256, size}`:
+
+- `activities[].text.files` with `field: content` (a Page: up to four `imagem-N` and up to four by digest) or `field: intro` (the
+  description of any activity: up to four by digest);
+- `sections[].files`, only together with `summary` (up to four by digest);
+- `questions[].files`: the images the questions of that quiz cite. A question that cites one without its file, or that embeds an
+  image (`data:`), refuses the whole list: an embedded image would be taken out in silence when Moodle cleans the HTML.
+
+Each file must be cited as `@@PLUGINFILE@@/<name>`; the bytes are checked by size, digest and real type (never by the label of
+the draft), staged with the preview, and stored with the real type. A name the field already has with the same bytes is reused;
+with other bytes, the whole list is refused: nothing is overwritten. The limits of the Page images are shared (2 MiB each, 24 and
+48 MiB per preview), the capabilities are the ones of updating each field, and a failure takes the files back with the texts.
+WebP goes to every version: where Moodle does not know the type (4.1 and 4.5), the file is stored with the real type and served as
+`image/webp`; there the image picker of Moodle does not offer WebP to whoever edits in Moodle.
+
+#### Questions of a quiz (1.15.0)
+
+When `get_info` advertises `updatequizquestions`, the list may have `questions`:
+
+```
+{ "questions": [ { "cmid": 60, "draw": 0, "items": [
+    { "key": "0b9a3a2e-6a41-4c55-9d1e-0c4f5f6a7b8c", "type": "multichoice|truefalse|shortanswer|match", "name": "...",
+      "text": "<html>", "feedback": "<html>", "known": [ "<html it had before>" ],
+      "answers": [ { "text": "...", "correct": true, "feedback": "", "match": "" } ] } ] } ] }
+```
+
+- **Each question goes once.** It gets the ID number `miwlab:q:<key>` in the question bank and the plugin records that the key went to
+  that quiz. One edited or deleted in the MiwLab afterwards is neither rewritten nor deleted in Moodle, and one the team took out does
+  not come back. A question that came in a package without a stamp is recognised by its type, text and answers (and, when it bears the
+  stamp of a package of the MiwLab, by a text it had before). Only the bank of the quiz and the questions in its slots are looked at,
+  never the bank a draw draws from.
+- **A quiz with attempts is not touched** (`attempts`, with the count of people). Previews of the team are not attempts; as when the
+  quiz is edited in Moodle, they are deleted (`previewsdeleted`). Attempts are looked for again when applying: a quiz that gained one
+  is left out, and one that appears during the writing undoes the whole update.
+- **A quiz that a student can start now is not touched** (`canstart`): Moodle has no lock on starting an attempt, so questions only go
+  to a quiz that is hidden (or in a hidden course), not open yet or closed, counting the overrides, with a minute of margin around
+  the dates. It is looked at again when applying, and one that becomes available during the writing undoes the whole update.
+- **Nothing is deleted from the question bank.**
+- **Without a draw** (`draw` 0) the questions are added, worth one mark each, after the ones that are there.
+- **With a draw** they and the questions made in Moodle that are in the quiz become one set in the bank of that quiz, and the quiz draws
+  `draw` of them. This changes what was set up in the quiz (`questionweights`, `questionlayout` warn about it); the maximum grade stays.
+  A question of a bank outside the quiz, or used elsewhere, is **copied** into the set (`copied`) by the export and import of Moodle,
+  with its files, and the original is only read. A Description stays fixed, where it is (`kept`). The quiz is left out with
+  `moodledraw` (a draw made in Moodle over another set), `notdrawable` (a pinned version or another item Moodle does not draw) or
+  `toofewquestions`. A set is of the MiwLab by its mark (the ID number of the category or of a question, or the stamp of a package),
+  never by a question that looks like one of the MiwLab.
+- The name of a question and the answer of a pair never open a tag: they are plain text (a space goes after a `<` that would open one).
+- Each quiz is the item `q:<cmid>` of the preview, field `questions`, with the counts in `questions` (to add, already there, joining the
+  set, copied, kept, slots and marks before and after, maximum grade). If the quiz is not as the preview showed, it is left out
+  (`questionschanged`). Without `mod/quiz:manage` and the question bank capabilities in the quiz: `nopermission`.
+- The questions are written last, in one transaction that lasts until the update ends: a failure takes them back with it.
+
+### local_miwlab_get_question_state (1.15.0)
+
+| Parameter | Type |
+|---|---|
+| courseid | int |
+| questions | string: a JSON object with only the key `questions`, as above |
+
+Needs what `local_miwlab_preview_update` needs and changes nothing. A quiz that is not of the course refuses the whole call.
+
+```
+{ "courseid": 7, "quizzes": [ { "cmid": 60, "action": "update", "reason": "", "people": 0, "warnings": [],
+    "questions": { "add": 2, "delivered": 1, "joined": 0, "copied": 0, "kept": 0, "draw": 0, "pool": 0, "slotsbefore": 3, "slotsafter": 5,
+                   "marksbefore": 3, "marksafter": 5, "grade": 10 } } ] }
+```
+
+`action` is `none` (nothing to send), `update` or `skip` (with `reason`).
 
 ### local_miwlab_apply_update (1.9.0)
 
@@ -986,7 +1065,9 @@ status of each backup of the content of a course (course, status, file name, siz
 that asked for it; the backup itself has no data of a person (no users, enrolments, grades, logs or comments) and the file
 of the backup is stored with no author, and both are deleted once the MiwLab downloads it, or after a day. The account of the MiwLab key,
 when the site administrator generates it, is an ordinary account of the site, with a fictitious e-mail address; the plugin
-keeps only its id (and the id of its role), to reuse it and to delete it on uninstall.
+keeps only its id (and the id of its role), to reuse it and to delete it on uninstall. The table `local_miwlab_questions` (1.15.0)
+keeps which question of the MiwLab went to which quiz (the quiz, the identifier of the question, the bank entry, the time), with no
+person; of quiz attempts the plugin reads only how many people have one.
 
 What the plugin reads and what it does not read. It reads the structure and the content of a course (the texts, files and
 questions a teacher wrote), counts of completion per activity and the consolidated results of an anonymous feedback. It does

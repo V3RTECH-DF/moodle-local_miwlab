@@ -113,6 +113,14 @@ $functions = [
         'capabilities' => 'local/miwlab:updatecourse, moodle/backup:backupcourse, moodle/restore:restorecourse, '
             . 'moodle/restore:configure, moodle/restore:rolldates',
     ],
+    'local_miwlab_get_question_state' => [
+        'classname' => 'local_miwlab\external\get_question_state',
+        'description' => 'What the questions written in the MiwLab would change in the quizzes of a course (to add, already '
+            . 'there, or left out with the reason). Changes nothing.',
+        'type' => 'read',
+        'capabilities' => 'local/miwlab:updatecourse, moodle/backup:backupcourse, moodle/restore:restorecourse, '
+            . 'moodle/restore:configure, moodle/restore:rolldates',
+    ],
     'local_miwlab_apply_update' => [
         'classname' => 'local_miwlab\external\apply_update',
         'description' => 'Queues the application of a preview of the safe update: exactly what the preview showed, without '
@@ -303,6 +311,7 @@ $services = [
             'local_miwlab_replace_course',
             'local_miwlab_preview_update',
             'local_miwlab_apply_update',
+            'local_miwlab_get_question_state',
             'local_miwlab_hide_course',
             'local_miwlab_get_course_state',
             'local_miwlab_get_forum_types',

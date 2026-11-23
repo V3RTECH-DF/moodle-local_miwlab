@@ -269,6 +269,7 @@ class restorer {
             $controller->execute_plan();
             $controller->destroy();
             $controller = null;
+            update_page_files::give_webp_its_type($courseid);
             self::remove_restorer_access($courseid);
             // The badges of the package come inactive from the restore: the course is new, so every badge in it came
             // from the package. Activating them needs moodle/badges:configurecriteria in the course (without it, they stay

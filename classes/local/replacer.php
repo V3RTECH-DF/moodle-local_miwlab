@@ -695,6 +695,7 @@ class replacer {
             $controller->execute_plan();
             $controller->destroy();
             $controller = null;
+            update_page_files::give_webp_its_type((int) $course->id);
             if (defined('PHPUNIT_TEST') && PHPUNIT_TEST && self::$afterplanhook) {
                 call_user_func(self::$afterplanhook, $course->id);
             }
@@ -1144,6 +1145,7 @@ class replacer {
                 $controller = self::controller($rollbackid, $course, 0);
                 self::precheck($controller, false);
                 $controller->execute_plan();
+                update_page_files::give_webp_its_type((int) $course->id);
             } finally {
                 if ($controller) {
                     $controller->destroy();

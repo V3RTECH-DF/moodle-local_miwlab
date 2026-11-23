@@ -686,6 +686,47 @@ final class update_test extends \advanced_testcase {
         $this->assertNull($this->item($named, 'cs:image'));
     }
 
+    public function test_a_jpeg_image_of_the_course_in_the_container_is_put_once_with_or_without_exif(): void {
+        $this->resetAfterTest();
+        $this->preventResetByRollback();
+        $this->setAdminUser();
+        if (class_exists('\\core_files\\redactor\\manager')) {
+            set_config('file_redactor_exifremoverenabled', 1);
+        }
+        $a = $this->course_with_people();
+        $cid = (int) $a->course->id;
+        $tiff = "MM\x00\x2a\x00\x00\x00\x08\x00\x01\x01\x12\x00\x03\x00\x00\x00\x01\x00\x01\x00\x00\x00\x00\x00\x00";
+        $plain = $this->colored_image(70, 'jpg');
+        $exif = substr($plain, 0, 2) . "\xFF\xE1" . pack('n', strlen($tiff) + 8) . "Exif\x00\x00" . $tiff . substr($plain, 2);
+        // As webservice/upload.php writes it: from a path, the removal of EXIF of the site applied.
+        $sent = function (string $bytes): array {
+            global $USER;
+            $path = make_request_directory() . '/imagem-do-curso.jpg.miwlab';
+            file_put_contents($path, update_page_files::HEADER . $bytes);
+            $id = file_get_unused_draft_itemid();
+            get_file_storage()->create_file_from_pathname(['contextid' => \context_user::instance($USER->id)->id,
+                'component' => 'user', 'filearea' => 'draft', 'itemid' => $id, 'filepath' => '/',
+                'filename' => 'imagem-do-curso.jpg.miwlab'], $path);
+            return ['draftitemid' => $id, 'filename' => 'imagem-do-curso.jpg', 'sha256' => hash('sha256', $bytes),
+                'size' => strlen($bytes)];
+        };
+        foreach (['without exif' => $plain, 'with exif' => $exif] as $case => $bytes) {
+            $this->course_files($cid, 'overviewfiles', []);
+            $ops = $this->ops(['coursesettings' => ['image' => $sent($bytes)]]);
+            $preview = updater::preview(replacer::course($cid), $ops, '', null);
+            $this->assertSame('update', $this->item($preview, 'cs:image')['group'], $case);
+            $record = $this->apply($preview);
+            $this->assertSame((int) restorer::STATUS_FINISHED, (int) $record->status, $case . ': ' . $record->errormessage);
+            $files = $this->files_of($cid, 'overviewfiles');
+            $this->assertSame(['imagem-do-curso.jpg'], array_keys($files), $case);
+            $this->assertSame(IMAGETYPE_JPEG, getimagesizefromstring($files['imagem-do-curso.jpg'])[2], $case);
+            // The same image again: nothing to do, even when Moodle rewrote it.
+            $againops = $this->ops(['coursesettings' => ['image' => $sent($bytes)]]);
+            $again = updater::preview(replacer::course($cid), $againops, '', null);
+            $this->assertNull($this->item($again, 'cs:image'), $case);
+        }
+    }
+
     public function test_a_description_that_cites_the_image_that_goes_along_is_not_held_back_but_without_the_image_it_is(): void {
         global $DB;
         $this->resetAfterTest();

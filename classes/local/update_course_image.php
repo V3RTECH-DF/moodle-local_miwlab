@@ -46,15 +46,8 @@ class update_course_image {
         if (!$meta) {
             return null;
         }
-        $source = $previewid === null ? restorer::draft_file($meta['draftitemid'], $meta['filename'])
-            : get_file_storage()->get_file(
-                \context_course::instance($course->id)->id,
-                'local_miwlab',
-                update_page_files::AREA,
-                $previewid,
-                self::PATH,
-                $meta['filename']
-            );
+        $source = $previewid === null ? update_page_files::draft_file($meta['draftitemid'], $meta['filename'])
+            : update_page_files::staged_file($course, $previewid, self::PATH, $meta['filename']);
         if (!$source || $source->get_filepath() !== ($previewid === null ? '/' : self::PATH)) {
             throw new \moodle_exception('error:draftfilenotfound', 'local_miwlab');
         }
@@ -75,7 +68,7 @@ class update_course_image {
         get_file_storage()->create_file_from_storedfile([
             'contextid' => \context_course::instance($course->id)->id, 'component' => 'local_miwlab',
             'filearea' => update_page_files::AREA, 'itemid' => $previewid, 'filepath' => self::PATH,
-            'filename' => $entry['meta']['filename'], 'mimetype' => $entry['mimetype'],
+            'filename' => $entry['source']->get_filename(), 'mimetype' => update_page_files::staged_mimetype($entry),
         ], $entry['source']);
     }
 
@@ -98,14 +91,14 @@ class update_course_image {
     }
 
     /**
-     * Whether a stored file has exactly the bytes the application sent (the size first, so a large file is not read).
+     * Whether a stored file is the image the application sent: its bytes, or written from them (Moodle may rewrite a JPEG).
      *
      * @param \stored_file $file
      * @param array $meta
      * @return bool
      */
     protected static function same_bytes(\stored_file $file, array $meta): bool {
-        return (int) $file->get_filesize() === $meta['size'] && hash_equals($meta['sha256'], hash('sha256', $file->get_content()));
+        return update_page_files::is_same($file, $meta);
     }
 
     /**
@@ -151,12 +144,11 @@ class update_course_image {
         $meta = $entry['meta'];
         [$overview, $insummary] = self::needs((int) $course->id, $meta, $summary);
         $contextid = \context_course::instance($course->id)->id;
-        $fs = get_file_storage();
-        $put = function (string $area) use ($entry, $meta, $contextid, $fs, $journal): void {
-            $file = $fs->create_file_from_storedfile([
+        $put = function (string $area) use ($entry, $meta, $contextid, $journal): void {
+            $file = update_page_files::create([
                 'contextid' => $contextid, 'component' => 'course', 'filearea' => $area, 'itemid' => 0, 'filepath' => '/',
                 'filename' => $meta['filename'], 'mimetype' => $entry['mimetype'],
-            ], $entry['source']);
+            ], $entry);
             $journal->remember_created_file((int) $file->get_id());
         };
         if ($overview) {
